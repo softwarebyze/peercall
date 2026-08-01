@@ -91,7 +91,7 @@ function Landing() {
       <footer className={styles.footer}>
         <span className="dim">PeerCall v0.1</span>
         <span className="dim">·</span>
-        <a className={styles.footerLink} href="https://github.com" target="_blank" rel="noopener">Source</a>
+        <a className={styles.footerLink} href="https://github.com/softwarebyze/peercall" target="_blank" rel="noopener">Source</a>
         <span className="dim">·</span>
         <span className="dim">MIT License</span>
       </footer>
