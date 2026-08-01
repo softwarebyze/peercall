@@ -1,0 +1,13 @@
+node_modules
+dist
+.git
+.gitignore
+*.md
+.env
+.env.*
+!.env.example
+fly.toml
+Dockerfile
+.dockerignore
+.opencode
+.argent

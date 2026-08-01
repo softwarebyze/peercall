@@ -1,0 +1,10 @@
+node_modules
+dist
+.env
+.env.*
+!.env.example
+.tanstack
+*.log
+.DS_Store
+.argent
+.opencode
