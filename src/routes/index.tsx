@@ -1,5 +1,5 @@
-import { createFileRoute } from '@tanstack/react-router'
-import { useState, useCallback } from 'react'
+import { createFileRoute, useNavigate } from '@tanstack/react-router'
+import { useState, useCallback, useRef, useEffect } from 'react'
 import styles from './index.module.css'
 
 export const Route = createFileRoute('/')({
@@ -7,18 +7,30 @@ export const Route = createFileRoute('/')({
 })
 
 function Landing() {
+  const navigate = useNavigate()
+  const inputRef = useRef<HTMLInputElement>(null)
   const [name, setName] = useState(() => {
     if (typeof window !== 'undefined') return localStorage.getItem('peercall_name') ?? ''
     return ''
   })
+
+  // Fallback for the rare full-page back-navigation (e.g. arriving home after
+  // opening a shared room link cold): the browser restores the input's DOM
+  // value without firing React events, leaving state stale. pageshow fires on
+  // every page (re)show, so re-sync state from the input then.
+  useEffect(() => {
+    const syncFromDom = () => setName(inputRef.current?.value ?? '')
+    window.addEventListener('pageshow', syncFromDom)
+    return () => window.removeEventListener('pageshow', syncFromDom)
+  }, [])
 
   const start = useCallback(() => {
     const trimmed = name.trim()
     if (!trimmed) return
     localStorage.setItem('peercall_name', trimmed)
     const roomId = crypto.randomUUID().slice(0, 12)
-    window.location.href = `/room/${roomId}?host=1`
-  }, [name])
+    navigate({ to: '/room/$roomId', params: { roomId }, search: { host: '1' } })
+  }, [name, navigate])
 
   return (
     <div className={styles.page}>
@@ -42,6 +54,7 @@ function Landing() {
 
         <div className={styles.startRow}>
           <input
+            ref={inputRef}
             className={styles.nameInput}
             type="text"
             placeholder="Your name"
