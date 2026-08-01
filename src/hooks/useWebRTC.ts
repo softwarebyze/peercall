@@ -37,6 +37,7 @@ export interface WebRTCState {
   shareScreen: () => Promise<void>
   stopScreen: () => void
   screenSharing: boolean
+  canShareScreen: boolean
   switchDevice: (kind: 'videoinput' | 'audioinput', deviceId: string) => Promise<void>
   endCall: () => void
   mediaError: string | null
@@ -443,6 +444,7 @@ export function useWebRTC(opts: {
     shareScreen,
     stopScreen,
     screenSharing,
+    canShareScreen: typeof navigator !== 'undefined' && typeof navigator.mediaDevices?.getDisplayMedia === 'function',
     switchDevice,
     endCall,
     mediaError,

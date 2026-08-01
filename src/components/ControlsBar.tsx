@@ -5,6 +5,7 @@ interface ControlsBarProps {
   cameraOn: boolean
   micOn: boolean
   screenSharing: boolean
+  screenShareSupported: boolean
   recording: boolean
   chatOpen: boolean
   isHost: boolean
@@ -42,13 +43,15 @@ export function ControlsBar(props: ControlsBarProps) {
           {props.micOn ? '🎙' : '🎙✕'}
         </button>
 
-        <button
-          className={props.screenSharing ? 'btn-primary' : 'btn-ghost'}
-          onClick={props.screenSharing ? props.onStopScreen : props.onShareScreen}
-          title={props.screenSharing ? 'Stop sharing' : 'Share screen'}
-        >
-          {props.screenSharing ? '⬛ Stop Share' : '🖥 Share'}
-        </button>
+        {props.screenShareSupported && (
+          <button
+            className={props.screenSharing ? 'btn-primary' : 'btn-ghost'}
+            onClick={props.screenSharing ? props.onStopScreen : props.onShareScreen}
+            title={props.screenSharing ? 'Stop sharing' : 'Share screen'}
+          >
+            {props.screenSharing ? '⬛ Stop Share' : '🖥 Share'}
+          </button>
+        )}
 
         <button
           className={props.recording ? styles.btnRecording : 'btn-ghost'}

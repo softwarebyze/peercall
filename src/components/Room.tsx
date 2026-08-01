@@ -207,6 +207,7 @@ export function Room({ roomId, displayName, isHost }: RoomProps) {
         cameraOn={rtc.cameraOn}
         micOn={rtc.micOn}
         screenSharing={rtc.screenSharing}
+        screenShareSupported={rtc.canShareScreen}
         recording={recorder.recording}
         chatOpen={chatOpen}
         isHost={isHostHere}
