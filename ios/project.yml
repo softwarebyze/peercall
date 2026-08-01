@@ -19,6 +19,8 @@ targets:
     sources:
       - path: PeerCall
       - path: Shared
+    dependencies:
+      - target: PeerCallScreenShare
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.softwarebyze.peercall

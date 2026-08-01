@@ -16,7 +16,32 @@
 		6B9A997244E4D49974ECCED5 /* ScreenSharePicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4C05C507B480597FD8C17B75 /* ScreenSharePicker.swift */; };
 		9B15B055F10ACCACD4C05BD0 /* SharedDefaults.swift in Sources */ = {isa = PBXBuildFile; fileRef = 25836368CE2DF3BDE956CC72 /* SharedDefaults.swift */; };
 		A9C1C32868724610693E4547 /* BrowserView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D57205622B12ED5595B78357 /* BrowserView.swift */; };
+		D6421C07901E8C8B632195B2 /* PeerCallScreenShare.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 16B2BB35EDB43BFA8BF9D57B /* PeerCallScreenShare.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		2D57A35C8F1A953E89600CB0 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 852123FA066D9DA5FFB5F294 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 7B244B3DBE9FF4D0C0591252;
+			remoteInfo = PeerCallScreenShare;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		0DDB8F31C5BD8F5D948AADE2 /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				D6421C07901E8C8B632195B2 /* PeerCallScreenShare.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
 		16B2BB35EDB43BFA8BF9D57B /* PeerCallScreenShare.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = PeerCallScreenShare.appex; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -105,10 +130,12 @@
 			buildConfigurationList = 16E65BB5DD324C159BC57C72 /* Build configuration list for PBXNativeTarget "PeerCall" */;
 			buildPhases = (
 				35A6C8F39CE1033E545B2C5D /* Sources */,
+				0DDB8F31C5BD8F5D948AADE2 /* Embed Foundation Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				F1D24BC5DB897204960E59D6 /* PBXTargetDependency */,
 			);
 			name = PeerCall;
 			packageProductDependencies = (
@@ -200,6 +227,14 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		F1D24BC5DB897204960E59D6 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 7B244B3DBE9FF4D0C0591252 /* PeerCallScreenShare */;
+			targetProxy = 2D57A35C8F1A953E89600CB0 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		274EEAD7E2C22786F2EBAE23 /* Release */ = {
