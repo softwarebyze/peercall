@@ -42,6 +42,55 @@ bun run generate:assets
 
 Committed assets in `public/` are served as-is by the production server.
 
+## iOS App (screen sharing on iPhone)
+
+Browsers on iPhone/iPad can't capture the screen (Apple doesn't expose
+`getDisplayMedia`), so screen sharing there requires a native wrapper app. The
+`ios/` folder is a thin SwiftUI shell that:
+
+1. **Hosts the existing web app** in a `WKWebView` — the full calling UI,
+   signaling, rooms, chat, and recording are reused as-is.
+2. **Adds a ReplayKit broadcast extension** (`PeerCallScreenShare`) that joins
+   the current room as a `"Name (screen)"` peer with its own minimal native
+   WebRTC connection (via the `stasel/WebRTC` SPM package) streaming the
+   captured frames. It mirrors the web signaling protocol, including the
+   `myId < peerId` initiator rule and ICE candidate buffering.
+3. **Bridges the two**: the web app detects the wrapper
+   (`window.webkit.messageHandlers.peerCall`) and routes the Share button to
+   the native system broadcast picker instead of `getDisplayMedia`. The room ID
+   and name are passed to the extension through an App Group
+   (`group.com.softwarebyze.peercall`).
+
+### Build
+
+```bash
+brew install xcodegen
+cd ios
+xcodegen generate
+xcodebuild -project PeerCall.xcodeproj -scheme PeerCall \
+  -destination 'generic/platform=iOS' CODE_SIGNING_ALLOWED=NO build
+```
+
+For a real device you must set your Apple Developer team in Xcode (both
+targets) so the App Group entitlement can be signed. Installing on a device
+requires an Apple Developer account.
+
+### How it works
+
+1. Open a call in the wrapper app and tap **🖥 Share**.
+2. A sheet shows the system broadcast picker — tap the PeerCall icon.
+3. The extension reads the room ID from the App Group defaults, joins the room
+   via the signaling WebSocket, and pushes ReplayKit screen frames into a
+   single video track.
+4. Every participant in the room (including desktop browsers) sees the screen
+   as a new video tile.
+5. Stop sharing from the red status-bar pill, or it ends automatically when the
+   call ends.
+
+The signaling server accepts native clients as-is: the CORS check only rejects
+mismatched `Origin` headers, and native `URLSessionWebSocketTask` connections
+send none.
+
 ## Deploy to Fly.io
 
 ### Prerequisites

@@ -11,3 +11,4 @@ Dockerfile
 .dockerignore
 .opencode
 .argent
+ios/build
