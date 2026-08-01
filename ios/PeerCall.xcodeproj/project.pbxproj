@@ -44,7 +44,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
-		16B2BB35EDB43BFA8BF9D57B /* PeerCallScreenShare.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = PeerCallScreenShare.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		16B2BB35EDB43BFA8BF9D57B /* PeerCallScreenShare.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = PeerCallScreenShare.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		255E169C4F27AC179909C3DE /* PeerCallApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PeerCallApp.swift; sourceTree = "<group>"; };
 		25836368CE2DF3BDE956CC72 /* SharedDefaults.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharedDefaults.swift; sourceTree = "<group>"; };
 		373BB7575770F7D092308EE6 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
@@ -55,7 +55,7 @@
 		AEEB059631BD461D7BB68458 /* PeerCall.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = PeerCall.entitlements; sourceTree = "<group>"; };
 		D4D7E7A5D954F72F2B4A7612 /* ScreenShareHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreenShareHandler.swift; sourceTree = "<group>"; };
 		D57205622B12ED5595B78357 /* BrowserView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserView.swift; sourceTree = "<group>"; };
-		E2A57A3F71D87348063925F0 /* PeerCall.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = PeerCall.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		E2A57A3F71D87348063925F0 /* PeerCall.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = PeerCall.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		E6E719131303A07DB38FE7B3 /* SignalClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SignalClient.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -298,6 +298,7 @@
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = PeerCallScreenShare/PeerCallScreenShare.entitlements;
 				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = 75M38Z9JBF;
 				INFOPLIST_FILE = PeerCallScreenShare/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -381,6 +382,7 @@
 				CODE_SIGN_ENTITLEMENTS = PeerCall/PeerCall.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = 75M38Z9JBF;
 				INFOPLIST_FILE = PeerCall/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -399,6 +401,7 @@
 				CODE_SIGN_ENTITLEMENTS = PeerCall/PeerCall.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = 75M38Z9JBF;
 				INFOPLIST_FILE = PeerCall/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -415,6 +418,7 @@
 			buildSettings = {
 				CODE_SIGN_ENTITLEMENTS = PeerCallScreenShare/PeerCallScreenShare.entitlements;
 				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = 75M38Z9JBF;
 				INFOPLIST_FILE = PeerCallScreenShare/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",

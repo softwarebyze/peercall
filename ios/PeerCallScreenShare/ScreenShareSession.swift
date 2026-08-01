@@ -32,9 +32,11 @@ final class ScreenShareSession: NSObject {
     func start() {
         wireSignaling()
         let name = SharedDefaults.name.isEmpty ? "Screen share" : SharedDefaults.name + " (screen)"
-        signal.connect(to: URL(string: SharedDefaults.serverURL + "/signal")!)
-        signal.join(roomId: SharedDefaults.roomId, name: name)
-        Task { await loadIceServers() }
+        Task {
+            await loadIceServers()
+            signal.connect(to: URL(string: SharedDefaults.serverURL + "/signal")!)
+            signal.join(roomId: SharedDefaults.roomId, name: name)
+        }
     }
 
     func capture(_ sampleBuffer: CMSampleBuffer) {
