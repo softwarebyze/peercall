@@ -5,6 +5,7 @@ final class ScreenShareHandler: RPBroadcastSampleHandler {
     private var session: ScreenShareSession?
 
     override func broadcastStarted(withSetupInfo setupInfo: [String: NSObject]?) {
+        ssLog.info("broadcastStarted; roomId=\(SharedDefaults.roomId, privacy: .public) name=\(SharedDefaults.name, privacy: .public) server=\(SharedDefaults.serverURL, privacy: .public)")
         guard !SharedDefaults.roomId.isEmpty else {
             finishBroadcastWithError(
                 ScreenShareHandler.error(1, "No active call. Open PeerCall and join a call before sharing your screen.")
@@ -13,7 +14,9 @@ final class ScreenShareHandler: RPBroadcastSampleHandler {
         }
         let session = ScreenShareSession()
         session.onFinish = { [weak self] message in
-            self?.finishBroadcastWithError(ScreenShareHandler.error(2, message))
+            DispatchQueue.main.async {
+                self?.finishBroadcastWithError(ScreenShareHandler.error(2, message))
+            }
         }
         session.start()
         self.session = session

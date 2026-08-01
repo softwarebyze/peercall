@@ -20,6 +20,9 @@ final class ScreenShareSession: NSObject {
     private var pcs: [String: RTCPeerConnection] = [:]
     private var pcPeerIds: [ObjectIdentifier: String] = [:]
     private var pendingCandidates: [String: [RTCIceCandidate]] = [:]
+    private var connectedPeerCount = 0
+    private var frameCount: Int64 = 0
+    private var watchdog: Task<Void, Never>?
 
     override init() {
         factory = RTCPeerConnectionFactory()
@@ -32,15 +35,22 @@ final class ScreenShareSession: NSObject {
     func start() {
         wireSignaling()
         let name = SharedDefaults.name.isEmpty ? "Screen share" : SharedDefaults.name + " (screen)"
+        ssLog.info("start: room=\(SharedDefaults.roomId, privacy: .public) name=\(name, privacy: .public) server=\(SharedDefaults.serverURL, privacy: .public)")
         Task {
             await loadIceServers()
+            ssLog.info("loaded \(self.iceServers.count, privacy: .public) ICE servers")
             signal.connect(to: URL(string: SharedDefaults.serverURL + "/signal")!)
             signal.join(roomId: SharedDefaults.roomId, name: name)
         }
+        startWatchdog()
     }
 
     func capture(_ sampleBuffer: CMSampleBuffer) {
         guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
+        frameCount += 1
+        if frameCount == 1 || frameCount.isMultiple(of: 300) {
+            ssLog.info("captured \(self.frameCount, privacy: .public) frames")
+        }
         let tsNs = Int64(CMSampleBufferGetPresentationTimeStamp(sampleBuffer).seconds * 1_000_000_000)
         let frame = RTCVideoFrame(
             buffer: RTCCVPixelBuffer(pixelBuffer: pixelBuffer),
@@ -51,6 +61,7 @@ final class ScreenShareSession: NSObject {
     }
 
     func stop() {
+        watchdog?.cancel()
         for id in Array(pcs.keys) { closePC(id) }
         signal.close()
     }
@@ -117,6 +128,32 @@ final class ScreenShareSession: NSObject {
         signal.onCallEnded = { [weak self] in
             self?.onFinish?("The call ended.")
         }
+        signal.onDisconnect = { [weak self] reason in
+            ssLog.error("signaling disconnected: \(reason, privacy: .public)")
+            self?.onFinish?("Lost connection to the PeerCall server (\(reason)).")
+        }
+    }
+
+    private func startWatchdog() {
+        watchdog = Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 8_000_000_000)
+            guard let self, !Task.isCancelled else { return }
+            if self.myId == nil {
+                self.onFinish?("Couldn't reach the PeerCall signaling server. Check your internet connection and try again.")
+                return
+            }
+            if self.knownPeerIds.isEmpty {
+                self.onFinish?("Connected to PeerCall, but no other participants are in this call.")
+                return
+            }
+            try? await Task.sleep(nanoseconds: 12_000_000_000)
+            guard !Task.isCancelled else { return }
+            if self.connectedPeerCount == 0 {
+                self.onFinish?("Connected to the call, but the video connection to the other device couldn't be established. See server logs.")
+            } else {
+                ssLog.info("watchdog: connected to \(self.connectedPeerCount, privacy: .public) peer(s), \(self.frameCount, privacy: .public) frames captured")
+            }
+        }
     }
 
     // MARK: - Peer management
@@ -130,6 +167,7 @@ final class ScreenShareSession: NSObject {
         for id in knownPeerIds where pcs[id] == nil {
             ensurePC(peerId: id)
         }
+        ssLog.info("reconcile: myId=\(myId, privacy: .public) peers=\(Array(self.knownPeerIds).sorted().joined(separator: ","), privacy: .public) pcs=\(self.pcs.keys.count, privacy: .public)")
     }
 
     @discardableResult
@@ -148,20 +186,29 @@ final class ScreenShareSession: NSObject {
         pcs[peerId] = pc
         pcPeerIds[ObjectIdentifier(pc)] = peerId
         pc.add(videoTrack, streamIds: ["screen"])
+        ssLog.info("peer connection created for \(peerId, privacy: .public), initiator=\(myId < peerId, privacy: .public)")
 
         if myId < peerId {
-        pc.offer(for: constraints) { [weak self, weak pc] sdp, _ in
-            guard let self, let pc, let sdp else { return }
-            pc.setLocalDescription(sdp) { [weak self] _ in
-                guard let self else { return }
-                self.signal.sendOffer(target: peerId, sdp: sdp)
+            pc.offer(for: constraints) { [weak self, weak pc] sdp, error in
+                guard let self, let pc, let sdp else {
+                    ssLog.error("offer failed for \(peerId, privacy: .public): \(String(describing: error), privacy: .public)")
+                    return
+                }
+                pc.setLocalDescription(sdp) { [weak self] error in
+                    guard let self else { return }
+                    if let error {
+                        ssLog.error("setLocalDescription(offer) failed: \(error.localizedDescription, privacy: .public)")
+                        return
+                    }
+                    self.signal.sendOffer(target: peerId, sdp: sdp)
+                }
             }
-        }
         }
         return pc
     }
 
     private func handleOffer(from: String, offer: RTCSessionDescription) {
+        ssLog.info("recv offer from \(from, privacy: .public)")
         guard let pc = ensurePC(peerId: from), pc.signalingState == .stable else { return }
         let constraints = RTCMediaConstraints(mandatoryConstraints: nil, optionalConstraints: nil)
         pc.setRemoteDescription(offer) { [weak self, weak pc] _ in
@@ -178,6 +225,7 @@ final class ScreenShareSession: NSObject {
     }
 
     private func handleAnswer(from: String, answer: RTCSessionDescription) {
+        ssLog.info("recv answer from \(from, privacy: .public)")
         guard let pc = pcs[from], pc.signalingState == .haveLocalOffer else { return }
         pc.setRemoteDescription(answer) { [weak self] _ in
             self?.flushPendingCandidates(for: from)
@@ -219,7 +267,28 @@ extension ScreenShareSession: RTCPeerConnectionDelegate {
     func peerConnection(_ peerConnection: RTCPeerConnection, didAdd stream: RTCMediaStream) {}
     func peerConnection(_ peerConnection: RTCPeerConnection, didRemove stream: RTCMediaStream) {}
     func peerConnectionShouldNegotiate(_ peerConnection: RTCPeerConnection) {}
-    func peerConnection(_ peerConnection: RTCPeerConnection, didChange newState: RTCIceConnectionState) {}
+    func peerConnection(_ peerConnection: RTCPeerConnection, didChange newState: RTCIceConnectionState) {
+        guard let peerId = pcPeerIds[ObjectIdentifier(peerConnection)] else { return }
+        ssLog.info("peer \(peerId, privacy: .public) ice state: \(Self.iceStateName(newState), privacy: .public)")
+        if newState == .connected || newState == .completed {
+            connectedPeerCount += 1
+            ssLog.info("CONNECTED to \(peerId, privacy: .public); frames so far \(self.frameCount, privacy: .public)")
+        }
+    }
+
+    private static func iceStateName(_ state: RTCIceConnectionState) -> String {
+        switch state {
+        case .new: return "new"
+        case .checking: return "checking"
+        case .connected: return "connected"
+        case .completed: return "completed"
+        case .failed: return "failed"
+        case .disconnected: return "disconnected"
+        case .closed: return "closed"
+        case .count: return "count"
+        @unknown default: return "unknown"
+        }
+    }
     func peerConnection(_ peerConnection: RTCPeerConnection, didChange newState: RTCIceGatheringState) {}
     func peerConnection(_ peerConnection: RTCPeerConnection, didRemove candidates: [RTCIceCandidate]) {}
     func peerConnection(_ peerConnection: RTCPeerConnection, didOpen dataChannel: RTCDataChannel) {}

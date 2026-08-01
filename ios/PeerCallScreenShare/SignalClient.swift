@@ -1,5 +1,8 @@
 import Foundation
 import WebRTC
+import os
+
+let ssLog = Logger(subsystem: "com.softwarebyze.peercall.screenshare", category: "signal")
 
 struct SignalPeer {
     let id: String
@@ -26,26 +29,32 @@ final class SignalClient {
     var onAnswer: ((String, RTCSessionDescription) -> Void)?
     var onIce: ((String, RTCIceCandidate) -> Void)?
     var onCallEnded: (() -> Void)?
+    var onDisconnect: ((String) -> Void)?
 
     func connect(to url: URL) {
+        ssLog.info("connecting to \(url.absoluteString, privacy: .public)")
         task = URLSession.shared.webSocketTask(with: url)
         task?.resume()
         receive()
     }
 
     func join(roomId: String, name: String) {
+        ssLog.info("joining room \(roomId, privacy: .public) as \(name, privacy: .public)")
         send(t: "join", payload: ["roomId": roomId, "name": name, "isHost": false])
     }
 
     func sendOffer(target: String, sdp: RTCSessionDescription) {
+        ssLog.info("send offer -> \(target, privacy: .public)")
         send(t: "offer", payload: ["target": target, "data": ["type": "offer", "sdp": sdp.sdp]])
     }
 
     func sendAnswer(target: String, sdp: RTCSessionDescription) {
+        ssLog.info("send answer -> \(target, privacy: .public)")
         send(t: "answer", payload: ["target": target, "data": ["type": "answer", "sdp": sdp.sdp]])
     }
 
     func sendIce(target: String, candidate: RTCIceCandidate) {
+        ssLog.info("send ice -> \(target, privacy: .public)")
         send(t: "ice", payload: [
             "target": target,
             "data": [
@@ -68,7 +77,9 @@ final class SignalClient {
             case .success(let message):
                 if case .string(let text) = message { self.handle(text) }
                 self.receive()
-            case .failure:
+            case .failure(let error):
+                ssLog.error("websocket receive failed: \(error.localizedDescription, privacy: .public)")
+                self.onDisconnect?(error.localizedDescription)
                 self.task = nil
             }
         }
@@ -85,11 +96,13 @@ final class SignalClient {
               let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let t = obj["t"] as? String,
               let payload = obj["payload"] as? [String: Any] else { return }
+        ssLog.info("recv \(t, privacy: .public)")
         switch t {
         case "joined":
             if let id = payload["id"] as? String { onJoined?(id) }
         case "room_state":
             guard let rawPeers = payload["peers"] as? [[String: Any]] else { return }
+            ssLog.info("room_state: \(rawPeers.count, privacy: .public) peers: \(rawPeers.compactMap { $0["name"] as? String }.joined(separator: ", "), privacy: .public)")
             onRoomState?(rawPeers.compactMap(SignalPeer.init))
         case "peer_joined":
             if let peer = SignalPeer(payload) { onPeerJoined?(peer) }

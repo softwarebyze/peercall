@@ -52,6 +52,10 @@ export function leaveRoom(room: Room, peer: Peer) {
   }
 }
 
+function sigLog(t: string, payload: { [k: string]: unknown }) {
+  console.log("[signal]", t, payload);
+}
+
 export function handleMessage(ws: ServerWebSocket<unknown>, raw: string | Buffer) {
   let msg: { t: string; payload: any };
   try {
@@ -77,12 +81,15 @@ export function handleMessage(ws: ServerWebSocket<unknown>, raw: string | Buffer
       rooms.set(roomId, room);
     }
     if (room.peers.size >= 8) {
+      sigLog("join_rejected", { roomId, name, reason: "full" });
       ws.send(pack("error", { message: "room full (max 8)" }));
       return;
     }
     const peer: Peer = { id, name, isHost: false, ws, room: roomId };
     room.peers.set(id, peer);
     if (room.hostId === null) room.hostId = id;
+
+    sigLog("join", { roomId, name, id, host: room.hostId === id, peerCount: room.peers.size });
 
     ws.send(pack("joined", { id, roomId, isHost: room.hostId === id }));
     for (const other of room.peers.values()) {
@@ -111,6 +118,14 @@ export function handleMessage(ws: ServerWebSocket<unknown>, raw: string | Buffer
     const { target, data } = payload as { target: string; data: any };
     const targetPeer = room.peers.get(target);
     if (targetPeer) {
+      sigLog(t, {
+        roomId,
+        from: peerId,
+        fromName: room.peers.get(peerId)?.name,
+        to: target,
+        toName: targetPeer.name,
+        size: data?.sdp?.length ?? 0,
+      });
       targetPeer.ws.send(pack(t, { from: peerId, data }));
     }
     return;
@@ -150,6 +165,7 @@ export function handleClose(ws: ServerWebSocket<unknown>) {
   for (const room of rooms.values()) {
     const peer = room.peers.get(peerId);
     if (peer) {
+      sigLog("leave", { roomId: room.id, id: peerId, name: peer.name });
       leaveRoom(room, peer);
       break;
     }
