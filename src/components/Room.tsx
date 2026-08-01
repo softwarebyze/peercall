@@ -42,6 +42,7 @@ export function Room({ roomId, displayName, isHost }: RoomProps) {
 
   const rtc = useWebRTC({
     myId,
+    roomId,
     sendSignal: send,
     signalMessages,
     peers,

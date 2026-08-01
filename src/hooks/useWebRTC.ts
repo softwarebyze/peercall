@@ -17,6 +17,14 @@ async function fetchIceConfig(): Promise<RTCConfiguration> {
   return DEFAULT_ICE_SERVERS
 }
 
+function inNativeWrapper(): boolean {
+  return (
+    typeof window !== 'undefined' &&
+    typeof (window as any).webkit !== 'undefined' &&
+    !!(window as any).webkit?.messageHandlers?.peerCall
+  )
+}
+
 export interface PeerStream {
   id: string
   name: string
@@ -45,13 +53,14 @@ export interface WebRTCState {
 
 export function useWebRTC(opts: {
   myId: string | null
+  roomId: string
   sendSignal: (t: string, p: unknown) => void
   signalMessages: SignalMsg[]
   peers: { id: string; name: string; isHost: boolean }[]
   isHost: boolean
   localName: string
 }): WebRTCState {
-  const { myId, sendSignal, signalMessages, peers, isHost, localName } = opts
+  const { myId, roomId, sendSignal, signalMessages, peers, isHost, localName } = opts
 
   const pcsRef = useRef<Map<string, RTCPeerConnection>>(new Map())
   const streamsRef = useRef<Map<string, MediaStream>>(new Map())
@@ -354,6 +363,14 @@ export function useWebRTC(opts: {
 
   const shareScreen = useCallback(async () => {
     try {
+      if (inNativeWrapper()) {
+        ;(window as any).webkit.messageHandlers.peerCall.postMessage({
+          action: 'startScreenShare',
+          roomId,
+          name: localName,
+        })
+        return
+      }
       const screen = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false })
       const screenTrack = screen.getVideoTracks()[0]
       setScreenSharing(true)
@@ -376,7 +393,7 @@ export function useWebRTC(opts: {
       // Re-render local
       if (localStreamRef.current) setLocalStream(new MediaStream(localStreamRef.current.getTracks()))
     } catch {}
-  }, [])
+  }, [roomId, localName])
 
   const stopScreen = useCallback(async () => {
     try {
@@ -444,7 +461,10 @@ export function useWebRTC(opts: {
     shareScreen,
     stopScreen,
     screenSharing,
-    canShareScreen: typeof navigator !== 'undefined' && typeof navigator.mediaDevices?.getDisplayMedia === 'function',
+    canShareScreen:
+      (typeof navigator !== 'undefined' &&
+        typeof navigator.mediaDevices?.getDisplayMedia === 'function') ||
+      inNativeWrapper(),
     switchDevice,
     endCall,
     mediaError,
