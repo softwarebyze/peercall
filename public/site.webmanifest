@@ -1,0 +1,21 @@
+{
+  "name": "PeerCall",
+  "short_name": "PeerCall",
+  "description": "Privacy-first peer-to-peer video calling. No servers, no accounts, no compromise.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0d0d0f",
+  "theme_color": "#0d0d0f",
+  "icons": [
+    {
+      "src": "/favicon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/favicon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

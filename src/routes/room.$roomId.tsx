@@ -3,6 +3,9 @@ import { useState } from 'react'
 import { Room } from '../components/Room'
 
 export const Route = createFileRoute('/room/$roomId')({
+  head: () => ({
+    meta: [{ title: 'PeerCall — Join a call' }],
+  }),
   component: RoomPage,
 })
 

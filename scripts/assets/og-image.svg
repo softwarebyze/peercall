@@ -1,0 +1,73 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="630" viewBox="0 0 1200 630">
+  <defs>
+    <style>
+      @font-face {
+        font-family: "JetBrains Mono";
+        src: url(data:font/ttf;base64,__FONT_REGULAR__) format("truetype");
+        font-weight: 400;
+        font-display: swap;
+      }
+      @font-face {
+        font-family: "JetBrains Mono";
+        src: url(data:font/ttf;base64,__FONT_BOLD__) format("truetype");
+        font-weight: 700;
+        font-display: swap;
+      }
+      .mono { font-family: "JetBrains Mono", monospace; }
+    </style>
+    <radialGradient id="glow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#00ff88" stop-opacity="0.10"/>
+      <stop offset="100%" stop-color="#00ff88" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <rect width="1200" height="630" fill="#0d0d0f"/>
+
+  <g stroke="#141418" stroke-width="1">
+    <line x1="60" y1="0" x2="60" y2="630"/><line x1="120" y1="0" x2="120" y2="630"/>
+    <line x1="180" y1="0" x2="180" y2="630"/><line x1="240" y1="0" x2="240" y2="630"/>
+    <line x1="300" y1="0" x2="300" y2="630"/><line x1="360" y1="0" x2="360" y2="630"/>
+    <line x1="420" y1="0" x2="420" y2="630"/><line x1="480" y1="0" x2="480" y2="630"/>
+    <line x1="540" y1="0" x2="540" y2="630"/><line x1="600" y1="0" x2="600" y2="630"/>
+    <line x1="660" y1="0" x2="660" y2="630"/><line x1="720" y1="0" x2="720" y2="630"/>
+    <line x1="780" y1="0" x2="780" y2="630"/><line x1="840" y1="0" x2="840" y2="630"/>
+    <line x1="900" y1="0" x2="900" y2="630"/><line x1="960" y1="0" x2="960" y2="630"/>
+    <line x1="1020" y1="0" x2="1020" y2="630"/><line x1="1080" y1="0" x2="1080" y2="630"/>
+    <line x1="1140" y1="0" x2="1140" y2="630"/>
+    <line x1="0" y1="60" x2="1200" y2="60"/><line x1="0" y1="120" x2="1200" y2="120"/>
+    <line x1="0" y1="180" x2="1200" y2="180"/><line x1="0" y1="240" x2="1200" y2="240"/>
+    <line x1="0" y1="300" x2="1200" y2="300"/><line x1="0" y1="360" x2="1200" y2="360"/>
+    <line x1="0" y1="420" x2="1200" y2="420"/><line x1="0" y1="480" x2="1200" y2="480"/>
+    <line x1="0" y1="540" x2="1200" y2="540"/><line x1="0" y1="600" x2="1200" y2="600"/>
+  </g>
+
+  <g class="mono">
+    <circle cx="72" cy="60" r="5" fill="#00ff88"/>
+    <text x="90" y="68" font-size="28" font-weight="700" fill="#00ff88">PeerCall</text>
+    <text x="240" y="68" font-size="22" fill="#56565e">·</text>
+    <text x="264" y="68" font-size="20" fill="#8a8a93">end-to-end encrypted · open source</text>
+  </g>
+
+  <g class="mono">
+    <text x="72" y="264" font-size="66" font-weight="700" fill="#f5f5f6">No servers.</text>
+    <text x="72" y="344" font-size="66" font-weight="700" fill="#f5f5f6">No accounts.</text>
+    <text x="72" y="424" font-size="66" font-weight="700" fill="#00ff88">No compromise.</text>
+  </g>
+
+  <g>
+    <circle cx="915" cy="310" r="210" fill="url(#glow)"/>
+    <circle cx="915" cy="310" r="205" fill="none" stroke="#1e1e24" stroke-width="2"/>
+    <g transform="rotate(-55 915 310)">
+      <circle cx="915" cy="310" r="144" fill="none" stroke="#00ff88" stroke-opacity="0.16" stroke-width="7"
+        stroke-dasharray="102 803" stroke-linecap="round"/>
+      <circle cx="915" cy="310" r="100" fill="none" stroke="#00ff88" stroke-opacity="0.34" stroke-width="7"
+        stroke-dasharray="153 475" stroke-linecap="round"/>
+    </g>
+    <circle cx="915" cy="310" r="50" fill="#00ff88"/>
+  </g>
+
+  <g class="mono">
+    <text x="72" y="568" font-size="20" fill="#8a8a93">WebRTC P2P · Zero servers · Local recording</text>
+    <text x="1128" y="568" font-size="20" fill="#56565e" text-anchor="end">peercall.fly.dev</text>
+  </g>
+</svg>

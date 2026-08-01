@@ -32,6 +32,16 @@ bun run prod
 
 This builds the app and starts the unified production server on port 3000 (configurable via `PORT` env var).
 
+### Brand assets
+
+Favicons, the OG social card, and the web app manifest are generated from source SVGs in `public/favicon.svg` and `scripts/assets/og-image.svg`:
+
+```bash
+bun run generate:assets
+```
+
+Committed assets in `public/` are served as-is by the production server.
+
 ## Deploy to Fly.io
 
 ### Prerequisites

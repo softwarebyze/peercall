@@ -77,6 +77,19 @@ const server = serve({
       }
     }
 
+    // Serve public/ files copied into dist/client (favicon, og-image, manifest, etc.)
+    if (url.pathname !== "/") {
+      const file = Bun.file(`./dist/client${url.pathname}`);
+      if (await file.exists()) {
+        return new Response(file, {
+          headers: {
+            "cache-control": "public, max-age=3600",
+            "content-type": file.type,
+          },
+        });
+      }
+    }
+
     // Everything else → TanStack Start SSR
     try {
       return await ssrApp.fetch(req);
