@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect, useCallback } from 'react'
+import { useNavigate } from '@tanstack/react-router'
 import { useSignaling, type SignalMsg, type PeerInfo, type ChatEntry } from '../hooks/useSignaling'
 import { useWebRTC } from '../hooks/useWebRTC'
 import { useRecorder } from '../hooks/useRecorder'
@@ -14,6 +15,7 @@ interface RoomProps {
 }
 
 export function Room({ roomId, displayName, isHost }: RoomProps) {
+  const navigate = useNavigate()
   const [signalMessages, setSignalMessages] = useState<SignalMsg[]>([])
   const [peers, setPeers] = useState<PeerInfo[]>([])
   const [chat, setChat] = useState<ChatEntry[]>([])
@@ -61,13 +63,15 @@ export function Room({ roomId, displayName, isHost }: RoomProps) {
     })
   }, [])
 
+  const { endCall } = rtc
+
   // Leave on call ended
   useEffect(() => {
     if (callEnded) {
-      rtc.endCall()
-      window.location.href = '/'
+      endCall()
+      navigate({ to: '/' })
     }
-  }, [callEnded, rtc])
+  }, [callEnded, endCall, navigate])
 
   // Derive isHost from server-authoritative peer list
   const isHostHere = peers.find((p) => p.id === myId)?.isHost ?? false
@@ -202,8 +206,8 @@ export function Room({ roomId, displayName, isHost }: RoomProps) {
         onRecordToggle={handleRecordToggle}
         onToggleChat={() => setChatOpen((v) => !v)}
         onSwitchDevice={rtc.switchDevice}
-        onLeave={() => { rtc.endCall(); window.location.href = '/' }}
-        onEndCall={() => { rtc.endCall(); window.location.href = '/' }}
+        onLeave={() => { endCall(); navigate({ to: '/' }) }}
+        onEndCall={() => { endCall(); navigate({ to: '/' }) }}
       />
 
       {chatOpen && (
