@@ -72,12 +72,28 @@ export function Room({ roomId, displayName, isHost }: RoomProps) {
   // Derive isHost from server-authoritative peer list
   const isHostHere = peers.find((p) => p.id === myId)?.isHost ?? false
 
+  const [supportsNativeShare, setSupportsNativeShare] = useState(false)
+  useEffect(() => {
+    setSupportsNativeShare(typeof navigator.share === 'function')
+  }, [])
+
   const shareLink = useCallback(() => {
     const url = `${window.location.origin}/room/${roomId}`
-    navigator.clipboard.writeText(url).then(() => {
-      setCopied(true)
-      setTimeout(() => setCopied(false), 2000)
-    })
+    if (navigator.share) {
+      navigator
+        .share({ title: 'PeerCall', text: 'Join my PeerCall call', url })
+        .catch(() => {})
+      return
+    }
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(url).then(
+        () => {
+          setCopied(true)
+          setTimeout(() => setCopied(false), 2000)
+        },
+        () => {}
+      )
+    }
   }, [roomId])
 
   const allPeers = useMemo(() => {
@@ -126,7 +142,7 @@ export function Room({ roomId, displayName, isHost }: RoomProps) {
         </div>
         <div className={styles.topRight}>
           <button className="btn-ghost" onClick={shareLink} style={{ fontSize: '0.75rem', padding: '0.3rem 0.6rem' }}>
-            {copied ? '✓ Copied' : '🔗 Copy invite link'}
+            {copied ? '✓ Copied' : supportsNativeShare ? '🔗 Share invite' : '🔗 Copy invite link'}
           </button>
           {recorder.recording && (
             <span className={styles.recBadge}>
