@@ -272,11 +272,16 @@ func (s *server) handleWS(w http.ResponseWriter, req *http.Request) {
 
 // ─── ICE config (mirrors buildIceConfig in signal/protocol.ts) ───────────────
 
+var (
+	meteredCacheAt  time.Time
+	meteredCacheVal []any
+)
+
 func iceConfig() map[string]any {
-	servers := []map[string]any{
-		{"urls": "stun:stun.l.google.com:19302"},
-		{"urls": "stun:stun1.l.google.com:19302"},
-		{"urls": "stun:stun.cloudflare.com:3478"},
+	stun := []any{
+		map[string]any{"urls": "stun:stun.l.google.com:19302"},
+		map[string]any{"urls": "stun:stun1.l.google.com:19302"},
+		map[string]any{"urls": "stun:stun.cloudflare.com:3478"},
 	}
 	turnURLs := []string{}
 	for _, u := range strings.Split(os.Getenv("TURN_URLS"), ",") {
@@ -285,24 +290,36 @@ func iceConfig() map[string]any {
 		}
 	}
 	if len(turnURLs) > 0 {
-		servers = append(servers, map[string]any{
+		return map[string]any{"iceServers": append(stun, map[string]any{
 			"urls":       turnURLs,
 			"username":   os.Getenv("TURN_USERNAME"),
 			"credential": os.Getenv("TURN_CREDENTIAL"),
-		})
-	} else {
-		// Free Open Relay TURN fallback — keeps hard-NAT calls working at zero cost.
-		servers = append(servers, map[string]any{
-			"urls": []string{
-				"turn:openrelay.metered.ca:80",
-				"turn:openrelay.metered.ca:443",
-				"turn:openrelay.metered.ca:443?transport=tcp",
-			},
-			"username":   "openrelayproject",
-			"credential": "openrelayproject",
-		})
+		})}
 	}
-	return map[string]any{"iceServers": servers}
+
+	// Free Metered Open Relay: https://www.metered.ca/tools/openrelay/
+	domain := strings.TrimSpace(os.Getenv("METERED_DOMAIN"))
+	apiKey := strings.TrimSpace(os.Getenv("METERED_TURN_API_KEY"))
+	if domain != "" && apiKey != "" {
+		if time.Since(meteredCacheAt) < 5*time.Minute && len(meteredCacheVal) > 0 {
+			return map[string]any{"iceServers": meteredCacheVal}
+		}
+		host := strings.TrimSuffix(strings.TrimPrefix(strings.TrimPrefix(domain, "https://"), "http://"), "/")
+		resp, err := http.Get("https://" + host + "/api/v1/turn/credentials?apiKey=" + apiKey)
+		if err == nil {
+			defer resp.Body.Close()
+			if resp.StatusCode == http.StatusOK {
+				var servers []any
+				if json.NewDecoder(resp.Body).Decode(&servers) == nil && len(servers) > 0 {
+					meteredCacheAt = time.Now()
+					meteredCacheVal = servers
+					return map[string]any{"iceServers": servers}
+				}
+			}
+		}
+	}
+
+	return map[string]any{"iceServers": stun}
 }
 
 // ─── http server ─────────────────────────────────────────────────────────────
