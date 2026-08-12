@@ -1,22 +1,13 @@
 import { useRef, useState, useCallback, useEffect } from 'react'
 import type { SignalMsg } from './useSignaling'
 
-// Fallback if /config is unreachable. Includes Open Relay's free TURN servers
-// so peers behind symmetric NATs can still connect at zero cost.
+// Fallback if /config is unreachable. STUN only — TURN comes from the server
+// (/config) when TURN_* or free Metered Open Relay env vars are set.
 const DEFAULT_ICE_SERVERS: RTCConfiguration = {
   iceServers: [
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
     { urls: 'stun:stun.cloudflare.com:3478' },
-    {
-      urls: [
-        'turn:openrelay.metered.ca:80',
-        'turn:openrelay.metered.ca:443',
-        'turn:openrelay.metered.ca:443?transport=tcp',
-      ],
-      username: 'openrelayproject',
-      credential: 'openrelayproject',
-    },
   ],
 }
 

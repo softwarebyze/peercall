@@ -88,7 +88,9 @@ docker run -p 3000:3000 \
 |---|---|---|
 | `PORT` | `3000` | HTTP/WebSocket port |
 | `CORS_ORIGINS` | (all) | Comma-separated allowed origins |
-| `TURN_URLS` | (none) | Comma-separated TURN server URLs |
+| `METERED_DOMAIN` | (none) | Free Open Relay app host, e.g. `yourapp.metered.live` |
+| `METERED_TURN_API_KEY` | (none) | Free Open Relay TURN API key ([docs](https://www.metered.ca/tools/openrelay/)) |
+| `TURN_URLS` | (none) | Comma-separated TURN server URLs (alternative to Metered) |
 | `TURN_USERNAME` | (none) | TURN username |
 | `TURN_CREDENTIAL` | (none) | TURN credential |
 
@@ -96,16 +98,23 @@ docker run -p 3000:3000 \
 
 WebRTC P2P needs a TURN server for peers behind symmetric NATs or restrictive firewalls — without one, those calls hang on “Connecting…” or never show the other person.
 
-**By default, PeerCall falls back to [Open Relay](https://openrelay.metered.ca/)'s free TURN servers**, so calls work out of the box at zero cost. For better latency/reliability you can configure your own TURN server via `TURN_*` env vars (Fly secrets in production):
+Without TURN configured, PeerCall still serves public STUN servers (many home networks work). For reliable calls, set one of the free options below.
+
+### Option 1: Free Metered Open Relay (recommended)
+
+1. Sign up at [Open Relay / Metered](https://www.metered.ca/tools/openrelay/) (free, ~20 GB/month TURN).
+2. Copy your app domain (`yourappname.metered.live`) and TURN API key from the dashboard.
+3. Set secrets:
 
 ```bash
 flyctl secrets set \
-  TURN_URLS=turn:your-turn-server:3478 \
-  TURN_USERNAME=user \
-  TURN_CREDENTIAL=secret
+  METERED_DOMAIN=yourappname.metered.live \
+  METERED_TURN_API_KEY=your_api_key
 ```
 
-### Option 1: Self-hosted (coturn)
+The server fetches short-lived ICE credentials from Metered’s REST API and exposes them on `/config` (the API key stays server-side).
+
+### Option 2: Self-hosted (coturn)
 
 ```bash
 # Install coturn
@@ -130,11 +139,17 @@ TURN_USERNAME=peercall
 TURN_CREDENTIAL=your-secret
 ```
 
-### Option 2: Hosted
+### Option 3: Other hosted TURN
 
+```bash
+flyctl secrets set \
+  TURN_URLS=turn:your-turn-server:3478 \
+  TURN_USERNAME=user \
+  TURN_CREDENTIAL=secret
+```
+
+- [Open Relay / Metered](https://www.metered.ca/tools/openrelay/) — Free tier (preferred path above)
 - [Twilio TURN](https://www.twilio.com/docs/stun-turn) — Free tier available
-- [Metered.ca TURN](https://www.metered.ca/tools/openrelay/) — Free for open source
-- [Open Relay](https://openrelay.metered.ca/) — Free TURN servers
 
 ## Architecture
 

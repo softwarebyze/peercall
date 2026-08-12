@@ -13,14 +13,14 @@ const ORIGIN_ALLOW = process.env.CORS_ORIGINS
 
 serve({
   port: PORT,
-  fetch(req, server) {
+  async fetch(req, server) {
     const origin = req.headers.get("origin") ?? "";
     if (origin && ![...ORIGIN_ALLOW].some((o) => origin.startsWith(o))) {
       return new Response("origin not allowed", { status: 403 });
     }
     const url = new URL(req.url);
     if (url.pathname === "/config") {
-      return Response.json(buildIceConfig());
+      return Response.json(await buildIceConfig());
     }
     if (url.pathname === "/signal" || url.pathname === "/") {
       const ok = server.upgrade(req, { data: {} as Record<string, unknown> });

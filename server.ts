@@ -47,7 +47,7 @@ const server = serve({
 
     // ICE/TURN config endpoint (credentials stay server-side)
     if (url.pathname === "/config") {
-      return Response.json(buildIceConfig());
+      return Response.json(await buildIceConfig());
     }
 
     // Serve static assets from dist/client/ (hash-based filenames → immutable)
