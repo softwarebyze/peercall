@@ -94,7 +94,16 @@ docker run -p 3000:3000 \
 
 ## TURN Server
 
-WebRTC P2P requires a TURN server for peers behind symmetric NATs or restrictive firewalls. Without it, some connections will fail silently.
+WebRTC P2P needs a TURN server for peers behind symmetric NATs or restrictive firewalls — without one, those calls hang on “Connecting…” or never show the other person.
+
+**By default, PeerCall falls back to [Open Relay](https://openrelay.metered.ca/)'s free TURN servers**, so calls work out of the box at zero cost. For better latency/reliability you can configure your own TURN server via `TURN_*` env vars (Fly secrets in production):
+
+```bash
+flyctl secrets set \
+  TURN_URLS=turn:your-turn-server:3478 \
+  TURN_USERNAME=user \
+  TURN_CREDENTIAL=secret
+```
 
 ### Option 1: Self-hosted (coturn)
 

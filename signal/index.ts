@@ -1,5 +1,5 @@
 import { serve } from "bun";
-import { handleMessage, handleClose } from "./protocol";
+import { handleMessage, handleClose, buildIceConfig } from "./protocol";
 
 const PORT = Number(process.env.SIGNAL_PORT ?? 8080);
 const ORIGIN_ALLOW = process.env.CORS_ORIGINS
@@ -19,8 +19,11 @@ serve({
       return new Response("origin not allowed", { status: 403 });
     }
     const url = new URL(req.url);
+    if (url.pathname === "/config") {
+      return Response.json(buildIceConfig());
+    }
     if (url.pathname === "/signal" || url.pathname === "/") {
-      const ok = server.upgrade(req, { data: {} as any });
+      const ok = server.upgrade(req, { data: {} as Record<string, unknown> });
       if (ok) return;
       return new Response("upgrade failed", { status: 400 });
     }
@@ -34,3 +37,4 @@ serve({
 });
 
 console.log(`PeerCall signaling server on ws://localhost:${PORT}`);
+console.log(`  ICE config on http://localhost:${PORT}/config`);

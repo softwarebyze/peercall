@@ -9,7 +9,7 @@
 //   TURN_CREDENTIAL  – TURN credential
 
 import { serve } from "bun";
-import { handleMessage, handleClose } from "./signal/protocol";
+import { handleMessage, handleClose, buildIceConfig } from "./signal/protocol";
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 const PORT = Number(process.env.PORT ?? 3000);
@@ -18,6 +18,7 @@ const CORS_ORIGINS = process.env.CORS_ORIGINS
   : null;
 
 // ─── TanStack Start SSR handler ───────────────────────────────────────────────
+// @ts-ignore — build artifact, only exists after `bun run build`
 const ssrApp = (await import("./dist/server/server.js")).default;
 
 // ─── Start server ─────────────────────────────────────────────────────────────
@@ -44,24 +45,9 @@ const server = serve({
       return new Response("upgrade failed", { status: 400 });
     }
 
-    // TURN config endpoint (credentials stay server-side)
+    // ICE/TURN config endpoint (credentials stay server-side)
     if (url.pathname === "/config") {
-      const turnUrls = process.env.TURN_URLS?.split(",").map((s) => s.trim()) ?? [];
-      const turnConfig: RTCConfiguration = {
-        iceServers: [
-          { urls: "stun:stun.l.google.com:19302" },
-          { urls: "stun:stun1.l.google.com:19302" },
-          { urls: "stun:stun.cloudflare.com:3478" },
-        ],
-      };
-      if (turnUrls.length > 0) {
-        turnConfig.iceServers!.push({
-          urls: turnUrls,
-          username: process.env.TURN_USERNAME ?? "",
-          credential: process.env.TURN_CREDENTIAL ?? "",
-        });
-      }
-      return Response.json(turnConfig);
+      return Response.json(buildIceConfig());
     }
 
     // Serve static assets from dist/client/ (hash-based filenames → immutable)

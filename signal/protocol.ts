@@ -22,6 +22,37 @@ export interface Room {
 
 export const rooms = new Map<RoomId, Room>();
 
+// ICE config served to clients from /config. Uses TURN_* env vars when set;
+// otherwise falls back to Open Relay's free TURN servers so peers behind
+// symmetric NATs can still connect at zero cost.
+export function buildIceConfig(): { iceServers: RTCIceServer[] } {
+  const iceServers: RTCIceServer[] = [
+    { urls: "stun:stun.l.google.com:19302" },
+    { urls: "stun:stun1.l.google.com:19302" },
+    { urls: "stun:stun.cloudflare.com:3478" },
+  ];
+  const turnUrls =
+    process.env.TURN_URLS?.split(",").map((s) => s.trim()).filter(Boolean) ?? [];
+  if (turnUrls.length > 0) {
+    iceServers.push({
+      urls: turnUrls,
+      username: process.env.TURN_USERNAME ?? "",
+      credential: process.env.TURN_CREDENTIAL ?? "",
+    });
+  } else {
+    iceServers.push({
+      urls: [
+        "turn:openrelay.metered.ca:80",
+        "turn:openrelay.metered.ca:443",
+        "turn:openrelay.metered.ca:443?transport=tcp",
+      ],
+      username: "openrelayproject",
+      credential: "openrelayproject",
+    });
+  }
+  return { iceServers };
+}
+
 export function pack(t: string, payload: unknown) {
   return JSON.stringify({ t, payload });
 }

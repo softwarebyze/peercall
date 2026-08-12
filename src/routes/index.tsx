@@ -25,7 +25,7 @@ function Landing() {
       <div className={styles.hero}>
         <div className={styles.badge}>
           <div className="pulse-dot" />
-          <span>end-to-end encrypted · open source</span>
+          <span>peer-to-peer media · open source</span>
         </div>
 
         <h1 className={styles.title}>

@@ -13,6 +13,5 @@
     "paths": { "~/*": ["./src/*"] },
     "baseUrl": "."
   },
-  "include": ["src", "*.ts", "*.tsx"],
-  "exclude": ["signal", "server.ts"]
+  "include": ["src", "vite.config.ts"]
 }
