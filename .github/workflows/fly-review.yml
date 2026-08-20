@@ -4,6 +4,9 @@ on:
   pull_request:
     types: [opened, reopened, synchronize, closed]
 
+# Requires FLY_API_TOKEN secret — create an org-scoped token:
+#   fly tokens create org --name "github-actions-pr-reviews"
+# Do NOT use `fly auth token` (the all-powerful auth token).
 env:
   FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
   FLY_REGION: iad
