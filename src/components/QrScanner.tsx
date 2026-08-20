@@ -13,8 +13,14 @@ export function QrScanner({ onScan, onClose }: QrScannerProps) {
 
   const handleScan = useCallback(
     (decodedText: string) => {
-      const url = new URL(decodedText)
-      const match = url.pathname.match(/\/room\/([a-zA-Z0-9-]+)/)
+      let url: URL
+      try {
+        url = new URL(decodedText)
+      } catch {
+        return
+      }
+      if (url.origin !== window.location.origin) return
+      const match = url.pathname.match(/^\/room\/([a-zA-Z0-9-]+)$/)
       if (match) {
         onScan(match[1])
       }
@@ -25,29 +31,37 @@ export function QrScanner({ onScan, onClose }: QrScannerProps) {
   useEffect(() => {
     if (!containerRef.current) return
 
+    let disposed = false
     const scanner = new Html5Qrcode('qr-reader')
     scannerRef.current = scanner
 
-    scanner
-      .start(
-        { facingMode: 'environment' },
-        {
-          fps: 10,
-          qrbox: { width: 250, height: 250 },
-          aspectRatio: 1.0,
-        },
-        (decodedText) => {
-          handleScan(decodedText)
-        },
-        () => {},
-      )
-      .catch(() => {
-        onClose()
-      })
+    const startPromise = scanner.start(
+      { facingMode: 'environment' },
+      {
+        fps: 10,
+        qrbox: { width: 250, height: 250 },
+        aspectRatio: 1.0,
+      },
+      (decodedText) => {
+        if (!disposed) handleScan(decodedText)
+      },
+      () => {},
+    )
+
+    startPromise.catch(() => {
+      if (!disposed) onClose()
+    })
 
     return () => {
+      disposed = true
       if (scannerRef.current?.isScanning) {
         scannerRef.current.stop().catch(() => {})
+      } else {
+        startPromise.then(() => {
+          if (scannerRef.current?.isScanning) {
+            scannerRef.current.stop().catch(() => {})
+          }
+        }).catch(() => {})
       }
     }
   }, [handleScan, onClose])

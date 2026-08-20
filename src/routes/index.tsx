@@ -40,6 +40,8 @@ function Landing() {
       const trimmed = name.trim()
       if (trimmed) {
         localStorage.setItem('peercall_name', trimmed)
+      } else {
+        localStorage.removeItem('peercall_name')
       }
       navigate({ to: '/room/$roomId', params: { roomId } })
     },

@@ -36,7 +36,9 @@ function RoomPage() {
   // browser restores the input's DOM value without firing React events, so
   // re-sync state from the input on pageshow.
   useEffect(() => {
-    const syncFromDom = () => setDisplayName(inputRef.current?.value ?? '')
+    const syncFromDom = () => {
+      if (inputRef.current) setDisplayName(inputRef.current.value)
+    }
     window.addEventListener('pageshow', syncFromDom)
     return () => window.removeEventListener('pageshow', syncFromDom)
   }, [])
