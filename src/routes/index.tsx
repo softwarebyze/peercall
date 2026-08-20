@@ -1,5 +1,6 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useState, useCallback, useRef, useEffect } from 'react'
+import { QrScanner } from '../components/QrScanner'
 import styles from './index.module.css'
 
 export const Route = createFileRoute('/')({
@@ -24,6 +25,8 @@ function Landing() {
     return () => window.removeEventListener('pageshow', syncFromDom)
   }, [])
 
+  const [showScanner, setShowScanner] = useState(false)
+
   const start = useCallback(() => {
     const trimmed = name.trim()
     if (!trimmed) return
@@ -31,6 +34,17 @@ function Landing() {
     const roomId = crypto.randomUUID().slice(0, 12)
     navigate({ to: '/room/$roomId', params: { roomId }, search: { host: '1' } })
   }, [name, navigate])
+
+  const handleQrScan = useCallback(
+    (roomId: string) => {
+      const trimmed = name.trim()
+      if (trimmed) {
+        localStorage.setItem('peercall_name', trimmed)
+      }
+      navigate({ to: '/room/$roomId', params: { roomId } })
+    },
+    [name, navigate],
+  )
 
   return (
     <div className={styles.page}>
@@ -67,7 +81,18 @@ function Landing() {
           <button className="btn-primary" onClick={start} disabled={!name.trim()}>
             Start a call — free, forever
           </button>
+          <button
+            className={styles.scanBtn}
+            onClick={() => setShowScanner(true)}
+            title="Scan QR code to join"
+          >
+            📷
+          </button>
         </div>
+
+        {showScanner && (
+          <QrScanner onScan={handleQrScan} onClose={() => setShowScanner(false)} />
+        )}
 
         <div className={styles.features}>
           <div className={styles.feature}>

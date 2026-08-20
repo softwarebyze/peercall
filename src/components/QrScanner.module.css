@@ -1,0 +1,95 @@
+.overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  padding: 1rem;
+}
+
+.modal {
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  width: 100%;
+  max-width: 400px;
+  overflow: hidden;
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.title {
+  margin: 0;
+  font-size: 1rem;
+  letter-spacing: -0.02em;
+}
+
+.closeBtn {
+  background: none;
+  border: none;
+  color: var(--text);
+  font-size: 1.25rem;
+  cursor: pointer;
+  padding: 0.25rem;
+  line-height: 1;
+  opacity: 0.6;
+  transition: opacity 0.15s;
+}
+
+.closeBtn:hover {
+  opacity: 1;
+}
+
+.scannerContainer {
+  padding: 1rem;
+  display: flex;
+  justify-content: center;
+}
+
+.scanner {
+  width: 100%;
+  max-width: 300px;
+}
+
+.hint {
+  text-align: center;
+  padding: 0 1rem 1rem;
+  margin: 0;
+  color: var(--text);
+  opacity: 0.6;
+  font-size: 0.875rem;
+}
+
+.scanner :global(video) {
+  border-radius: 8px;
+}
+
+.scanner :global(img[alt="Info icon"]) {
+  display: none;
+}
+
+.scanner :global(#html5-qrcode-button-camera-permission),
+.scanner :global(#html5-qrcode-button-camera-start),
+.scanner :global(#html5-qrcode-button-camera-stop) {
+  background: var(--accent);
+  color: var(--bg);
+  border: none;
+  border-radius: 6px;
+  padding: 0.5rem 1rem;
+  cursor: pointer;
+  font-size: 0.875rem;
+}
+
+.scanner :global(#html5-qrcode-button-camera-permission):hover,
+.scanner :global(#html5-qrcode-button-camera-start):hover,
+.scanner :global(#html5-qrcode-button-camera-stop):hover {
+  opacity: 0.9;
+}
