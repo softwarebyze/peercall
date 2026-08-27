@@ -1,7 +1,8 @@
-import { createFileRoute, Link } from '@tanstack/react-router'
-import { useState, useRef, useEffect } from 'react'
+import { createFileRoute } from '@tanstack/react-router'
+import { useState, useEffect } from 'react'
 import { Room } from '../components/Room'
-import styles from './index.module.css'
+import { Lobby } from '../components/Lobby'
+import type { MediaHandoff } from '../hooks/useLocalMedia'
 
 type RoomSearch = { host?: 1 }
 
@@ -25,79 +26,36 @@ function RoomPage() {
   const isHost = search.host === 1
 
   const [displayName, setDisplayName] = useState('')
-  const [joined, setJoined] = useState(false)
+  const [media, setMedia] = useState<MediaHandoff | null>(null)
   const [ready, setReady] = useState(false)
-  const inputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
-    const stored = localStorage.getItem('peercall_name') ?? ''
-    setDisplayName(stored)
-    // Hosts arrive from the landing page where they just typed a name.
-    // Invitees always confirm before joining.
-    if (isHost && stored) setJoined(true)
+    setDisplayName(localStorage.getItem('peercall_name') ?? '')
     setReady(true)
-  }, [isHost])
-
-  useEffect(() => {
-    const syncFromDom = () => {
-      if (inputRef.current) setDisplayName(inputRef.current.value)
-    }
-    window.addEventListener('pageshow', syncFromDom)
-    return () => window.removeEventListener('pageshow', syncFromDom)
   }, [])
 
   if (!ready) return null
 
-  if (!joined) {
+  if (!media) {
     return (
-      <div className={styles.page}>
-        <div className={styles.hero}>
-          <div className={styles.badge}>
-            <div className="pulse-dot" />
-            <span>Join room</span>
-          </div>
-          <h1 className={styles.title} style={{ fontSize: '2rem' }}>
-            Enter your name
-          </h1>
-          <p className={styles.sub}>
-            Room <span className="accent">{roomId}</span>
-          </p>
-          <div className={styles.startBlock}>
-            <input
-              ref={inputRef}
-              className={styles.nameInput}
-              type="text"
-              placeholder="Your name"
-              value={displayName}
-              onChange={(e) => setDisplayName(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && displayName.trim()) {
-                  localStorage.setItem('peercall_name', displayName.trim())
-                  setJoined(true)
-                }
-              }}
-              maxLength={30}
-              autoFocus
-            />
-            <button
-              className="btn-primary"
-              disabled={!displayName.trim()}
-              type="button"
-              onClick={() => {
-                localStorage.setItem('peercall_name', displayName.trim())
-                setJoined(true)
-              }}
-            >
-              Join
-            </button>
-            <Link to="/" className="btn-ghost" style={{ alignSelf: 'center' }}>
-              Back
-            </Link>
-          </div>
-        </div>
-      </div>
+      <Lobby
+        roomId={roomId}
+        initialName={displayName}
+        onJoin={(args) => {
+          localStorage.setItem('peercall_name', args.name)
+          setDisplayName(args.name)
+          setMedia(args.media)
+        }}
+      />
     )
   }
 
-  return <Room roomId={roomId} displayName={displayName} isHost={isHost} />
+  return (
+    <Room
+      roomId={roomId}
+      displayName={displayName}
+      isHost={isHost}
+      initialMedia={media}
+    />
+  )
 }

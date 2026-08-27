@@ -1,13 +1,15 @@
-import { useState, useMemo, useCallback, useRef } from 'react'
+import { useState, useMemo, useCallback, useRef, useEffect } from 'react'
 import { Link } from '@tanstack/react-router'
 import { useSignaling, type SignalMsg, type PeerInfo, type ChatEntry, type SignalStatus } from '../hooks/useSignaling'
 import { useWebRTC } from '../hooks/useWebRTC'
 import { useRecorder } from '../hooks/useRecorder'
 import { useMicLevel } from '../hooks/useMicLevel'
 import { useMediaDevices } from '../hooks/useMediaDevices'
+import type { MediaHandoff } from '../hooks/useLocalMedia'
 import { VideoTile } from './VideoTile'
 import { ControlsBar } from './ControlsBar'
 import { ChatPanel } from './ChatPanel'
+import { InviteCard } from './InviteCard'
 import { IconCopy, IconCheck, IconPeople, IconWarn } from './Icons'
 import { captureCallScreenshot } from '../lib/screenshot'
 import type { MediaKind } from '../lib/devices'
@@ -17,6 +19,7 @@ interface RoomProps {
   roomId: string
   displayName: string
   isHost: boolean
+  initialMedia: MediaHandoff
 }
 
 type RoomView =
@@ -75,6 +78,7 @@ export function Room(props: RoomProps) {
           roomId={props.roomId}
           displayName={props.displayName}
           isHost={props.isHost}
+          initialMedia={props.initialMedia}
           onLeave={() => setView({ kind: 'left' })}
           onEnded={() => setView({ kind: 'ended' })}
         />
@@ -90,10 +94,11 @@ function RoomSession(props: {
   roomId: string
   displayName: string
   isHost: boolean
+  initialMedia: MediaHandoff
   onLeave: () => void
   onEnded: () => void
 }) {
-  const { roomId, displayName, isHost, onLeave, onEnded } = props
+  const { roomId, displayName, isHost, initialMedia, onLeave, onEnded } = props
   const [signalMessages, setSignalMessages] = useState<SignalMsg[]>([])
   const [peers, setPeers] = useState<PeerInfo[]>([])
   const [chat, setChat] = useState<ChatEntry[]>([])
@@ -103,7 +108,15 @@ function RoomSession(props: {
   const [copied, setCopied] = useState(false)
   const [speakerDeviceId, setSpeakerDeviceId] = useState<string | null>(null)
   const [shotError, setShotError] = useState<string | null>(null)
+  const [toast, setToast] = useState<string | null>(null)
+  const [endConfirm, setEndConfirm] = useState(false)
   const gridRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!toast) return
+    const id = window.setTimeout(() => setToast(null), 4000)
+    return () => window.clearTimeout(id)
+  }, [toast])
 
   const handleSignal = useMemo(
     () => (msg: SignalMsg) => {
@@ -135,33 +148,36 @@ function RoomSession(props: {
     signalMessages,
     peers,
     localName: displayName,
+    initialMedia,
   })
 
   const recorder = useRecorder()
   const devices = useMediaDevices({ stream: rtc.localStream })
   const micLevel = useMicLevel({ stream: rtc.localStream, active: rtc.micOn })
   const isHostHere = peers.find((p) => p.id === myId)?.isHost ?? false
+  const inviteUrl = `${typeof window !== 'undefined' ? window.location.origin : ''}/room/${roomId}`
 
   const leaveCall = useCallback(() => {
+    if (recorder.recording) void recorder.stop()
     rtc.endCall()
     disconnect()
     onLeave()
-  }, [rtc, disconnect, onLeave])
+  }, [recorder, rtc, disconnect, onLeave])
 
   const endCallForEveryone = useCallback(() => {
+    if (recorder.recording) void recorder.stop()
     send('end_call', {})
     rtc.endCall()
     disconnect()
-    onLeave()
-  }, [send, rtc, disconnect, onLeave])
+    onEnded()
+  }, [recorder, send, rtc, disconnect, onEnded])
 
   const shareLink = useCallback(() => {
-    const url = `${window.location.origin}/room/${roomId}`
-    void navigator.clipboard.writeText(url).then(() => {
+    void navigator.clipboard.writeText(inviteUrl).then(() => {
       setCopied(true)
       setTimeout(() => setCopied(false), 2000)
     })
-  }, [roomId])
+  }, [inviteUrl])
 
   const allPeers = useMemo(() => {
     const me = {
@@ -189,11 +205,41 @@ function RoomSession(props: {
     return [me, ...remotes]
   }, [myId, displayName, isHostHere, peers, rtc.localStream, rtc.remoteStreams, rtc.connectionStates])
 
+  const alone = allPeers.length === 1
+
   const handleRecordToggle = () => {
     if (recorder.recording) {
-      recorder.stop()
+      void recorder.stop().then((result) => {
+        switch (result.kind) {
+          case 'saved':
+            setToast('Saved to Downloads')
+            return
+          case 'empty':
+            setToast('Nothing was saved.')
+            return
+          case 'idle':
+            return
+          default: {
+            const _exhaustive: never = result
+            return _exhaustive
+          }
+        }
+      })
     } else if (rtc.localStream) {
-      recorder.start(rtc.localStream)
+      void recorder.start(rtc.localStream).then((result) => {
+        switch (result.kind) {
+          case 'ok':
+            return
+          case 'no_video':
+          case 'failed':
+            setToast(result.message)
+            return
+          default: {
+            const _exhaustive: never = result
+            return _exhaustive
+          }
+        }
+      })
     }
   }
 
@@ -240,6 +286,10 @@ function RoomSession(props: {
     [rtc]
   )
 
+  const recClock = `${String(Math.floor(recorder.duration / 60)).padStart(2, '0')}:${String(
+    recorder.duration % 60,
+  ).padStart(2, '0')}`
+
   return (
     <div className={styles.room}>
       {!connected && (
@@ -262,6 +312,15 @@ function RoomSession(props: {
         <div className={styles.mediaError}>
           <IconWarn size={16} />
           <span>{rtc.mediaError}</span>
+          <button className="btn-ghost" type="button" onClick={rtc.retryMedia}>
+            Retry
+          </button>
+          <button className="btn-ghost" type="button" onClick={rtc.joinAudioOnly}>
+            Audio only
+          </button>
+          <button className="btn-ghost" type="button" onClick={rtc.joinListenOnly}>
+            Listen only
+          </button>
         </div>
       )}
 
@@ -272,7 +331,7 @@ function RoomSession(props: {
         </div>
       )}
 
-      {connected && !rtc.localStream && !rtc.mediaError && (
+      {connected && !rtc.localStream && !rtc.mediaError && !rtc.listenOnly && (
         <div className={styles.mediaInfo}>
           <span>Starting camera and microphone…</span>
         </div>
@@ -285,20 +344,23 @@ function RoomSession(props: {
             PeerCall
           </span>
           <span className="dim">·</span>
-          <span className="dim" style={{ fontSize: '0.8rem' }}>
-            {roomId}
-          </span>
+          <span className={styles.roomCode}>{roomId}</span>
         </div>
         <div className={styles.topRight}>
-          <button className="btn-ghost" onClick={shareLink} type="button" style={{ fontSize: '0.75rem', padding: '0.3rem 0.6rem' }}>
+          <button
+            className="btn-ghost"
+            onClick={shareLink}
+            type="button"
+            data-testid="copy-invite"
+            style={{ fontSize: '0.75rem', padding: '0.3rem 0.6rem' }}
+          >
             {copied ? <IconCheck size={14} /> : <IconCopy size={14} />}
             {copied ? 'Copied' : 'Copy invite'}
           </button>
           {recorder.recording && (
-            <span className={styles.recBadge}>
+            <span className={styles.recBadge} data-testid="rec-pill">
               <span className={styles.recDot} />
-              REC {String(Math.floor(recorder.duration / 60)).padStart(2, '0')}:
-              {String(recorder.duration % 60).padStart(2, '0')}
+              REC {recClock}
             </span>
           )}
           <button
@@ -314,21 +376,42 @@ function RoomSession(props: {
       </div>
 
       <div className={styles.body}>
-        <div ref={gridRef} className={`${styles.grid} ${participantsOpen ? styles.gridNarrow : ''}`}>
-          {allPeers.map((p) => (
-            <VideoTile
-              key={p.id}
-              name={p.name}
-              stream={p.stream ?? null}
-              isLocal={p.isLocal}
-              isHost={p.isHost}
-              connectionState={p.connectionState}
-              videoOff={p.isLocal ? !rtc.cameraOn : undefined}
-              micOff={p.isLocal ? !rtc.micOn : undefined}
-              sinkId={speakerDeviceId}
-            />
-          ))}
-        </div>
+        {alone ? (
+          <div className={styles.solo}>
+            <div ref={gridRef} className={styles.soloPreview}>
+              {allPeers.map((p) => (
+                <VideoTile
+                  key={p.id}
+                  name={p.name}
+                  stream={p.stream ?? null}
+                  isLocal={p.isLocal}
+                  isHost={p.isHost}
+                  connectionState={p.connectionState}
+                  videoOff={p.isLocal ? !rtc.cameraOn : undefined}
+                  micOff={p.isLocal ? !rtc.micOn : undefined}
+                  sinkId={speakerDeviceId}
+                />
+              ))}
+            </div>
+            <InviteCard roomId={roomId} url={inviteUrl} />
+          </div>
+        ) : (
+          <div ref={gridRef} className={`${styles.grid} ${participantsOpen ? styles.gridNarrow : ''}`}>
+            {allPeers.map((p) => (
+              <VideoTile
+                key={p.id}
+                name={p.name}
+                stream={p.stream ?? null}
+                isLocal={p.isLocal}
+                isHost={p.isHost}
+                connectionState={p.connectionState}
+                videoOff={p.isLocal ? !rtc.cameraOn : undefined}
+                micOff={p.isLocal ? !rtc.micOn : undefined}
+                sinkId={speakerDeviceId}
+              />
+            ))}
+          </div>
+        )}
 
         {participantsOpen && (
           <div className={styles.participantsPanel}>
@@ -366,6 +449,9 @@ function RoomSession(props: {
       <ControlsBar
         cameraOn={rtc.cameraOn}
         micOn={rtc.micOn}
+        cameraAvailable={rtc.hasVideo && !rtc.listenOnly}
+        micAvailable={rtc.hasAudio && !rtc.listenOnly}
+        recordAvailable={rtc.hasVideo || rtc.screenSharing}
         screenSharing={rtc.screenSharing}
         recording={recorder.recording}
         chatOpen={chatOpen}
@@ -384,7 +470,7 @@ function RoomSession(props: {
         onToggleChat={() => setChatOpen((v) => !v)}
         onSwitchDevice={handleSwitchDevice}
         onLeave={leaveCall}
-        onEndCall={endCallForEveryone}
+        onEndCall={() => setEndConfirm(true)}
       />
 
       {chatOpen && (
@@ -393,6 +479,50 @@ function RoomSession(props: {
           myId={myId ?? ''}
           onSend={(text) => send('chat', { text })}
         />
+      )}
+
+      {toast && (
+        <div className={styles.toast} data-testid="toast" role="status">
+          {toast}
+        </div>
+      )}
+
+      {endConfirm && (
+        <div className={styles.modalOverlay} onClick={() => setEndConfirm(false)} role="presentation">
+          <div
+            className={styles.modal}
+            role="dialog"
+            aria-labelledby="end-title"
+            data-testid="end-confirm"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className={styles.modalHeader}>
+              <h3 id="end-title" className={styles.modalTitle}>
+                End for everyone?
+              </h3>
+            </div>
+            <div className={styles.modalBody}>
+              <p className={styles.confirmCopy}>
+                This hangs up the room for every participant. You cannot undo it.
+              </p>
+              <div className={styles.confirmActions}>
+                <button className="btn-ghost" type="button" onClick={() => setEndConfirm(false)}>
+                  Cancel
+                </button>
+                <button
+                  className="btn-danger"
+                  type="button"
+                  onClick={() => {
+                    setEndConfirm(false)
+                    endCallForEveryone()
+                  }}
+                >
+                  End for everyone
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )

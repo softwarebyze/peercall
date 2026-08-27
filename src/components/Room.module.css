@@ -8,13 +8,14 @@
 
 /* Top bar */
 .topBar {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 0.55rem 1rem;
   border-bottom: 1px solid var(--line);
   background: var(--bg);
-  z-index: 10;
+  z-index: 40;
   flex-shrink: 0;
 }
 .topLeft, .topRight {
@@ -191,6 +192,7 @@
 .mediaError {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 0.5rem;
   padding: 0.5rem 1rem;
   background: rgba(255,77,77,0.12);
@@ -199,6 +201,10 @@
   font-size: 0.8rem;
   font-weight: 500;
   flex-shrink: 0;
+}
+.mediaError button {
+  padding: 0.3rem 0.55rem;
+  font-size: 0.72rem;
 }
 .mediaErrorIcon {
   font-size: 1rem;
@@ -274,7 +280,7 @@
   padding: 0.45rem 0.75rem;
   border-top: 1px solid var(--line);
   background: var(--bg);
-  z-index: 10;
+  z-index: 30;
   flex-shrink: 0;
   gap: 0.5rem;
   flex-wrap: wrap;
@@ -412,11 +418,11 @@
   background: var(--accent-dim);
 }
 
-/* Chat panel */
+/* Chat panel sits below the header so Copy invite stays clickable. */
 .chatPanel {
   position: fixed;
   right: 0;
-  top: 0;
+  top: 2.75rem;
   bottom: 3.5rem;
   width: 320px;
   max-width: 90vw;
@@ -424,7 +430,7 @@
   border-left: 1px solid var(--line);
   display: flex;
   flex-direction: column;
-  z-index: 20;
+  z-index: 15;
 }
 .chatHeader {
   display: flex;
@@ -485,6 +491,204 @@
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 
+.roomCode {
+  font-family: var(--font-chrome);
+  font-size: 0.8rem;
+  color: var(--accent);
+}
+
+/* Lobby */
+.lobby {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem 1.25rem 4rem;
+  background: var(--bg);
+}
+.lobbyMain {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(16rem, 22rem);
+  gap: 1.5rem;
+  width: min(860px, 100%);
+  align-items: center;
+}
+.lobbyPreview {
+  aspect-ratio: 4 / 3;
+  border: 1px solid var(--line);
+  overflow: hidden;
+  min-height: 220px;
+  background: var(--bg-elev);
+  position: relative;
+}
+.lobbyPreview .tile,
+.soloPreview .tile {
+  width: 100%;
+  height: 100%;
+}
+.lobbyForm {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+}
+.lobbyForm input {
+  width: 100%;
+}
+.lobbyTitle {
+  margin: 0;
+  font-size: 1.8rem;
+  letter-spacing: -0.04em;
+}
+.badgeRow {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-family: var(--font-chrome);
+  font-size: 0.75rem;
+}
+.lobbyToggles {
+  display: flex;
+  gap: 0.35rem;
+}
+.lobbyActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-top: 0.3rem;
+}
+.deviceHint {
+  font-size: 0.75rem;
+  color: var(--text-dim);
+  margin: 0;
+}
+.fieldLabel {
+  font-family: var(--font-chrome);
+  font-size: 0.65rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+/* Empty-room invite */
+.solo {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1.25rem;
+  padding: 1.25rem 1rem 1rem;
+  overflow: auto;
+  min-height: 0;
+}
+.soloPreview {
+  width: min(420px, 100%);
+  aspect-ratio: 16 / 10;
+  border: 1px solid var(--line);
+  overflow: hidden;
+  flex-shrink: 0;
+  position: relative;
+}
+.inviteCard {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 1.25rem 1.5rem;
+  border: 1px solid var(--line-strong);
+  background: var(--bg-elev);
+  max-width: 28rem;
+  width: 100%;
+  text-align: center;
+}
+.inviteTitle {
+  margin: 0;
+  font-size: 1.15rem;
+  letter-spacing: -0.03em;
+}
+.inviteUrl {
+  font-family: var(--font-chrome);
+  font-size: 0.72rem;
+  color: var(--accent);
+  word-break: break-all;
+  padding: 0.4rem 0.6rem;
+  border: 1px solid var(--line);
+  width: 100%;
+}
+.inviteQr {
+  padding: 0.4rem;
+  border: 1px solid var(--line);
+}
+
+/* Device / confirm modal */
+.modalOverlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.62);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 80;
+  padding: 1rem;
+}
+.modal {
+  width: min(420px, 100%);
+  min-height: 200px;
+  max-height: 80vh;
+  background: var(--bg-elev);
+  border: 1px solid var(--line-strong);
+  display: flex;
+  flex-direction: column;
+}
+.modalHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem 0.9rem;
+  border-bottom: 1px solid var(--line);
+}
+.modalTitle {
+  margin: 0;
+  font-size: 0.95rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.modalBody {
+  padding: 0.9rem;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+.iconBtn {
+  padding: 0.3rem;
+  border: none;
+}
+.confirmCopy {
+  margin: 0;
+  color: var(--text-dim);
+}
+.confirmActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.4rem;
+  margin-top: 0.5rem;
+}
+.toast {
+  position: fixed;
+  bottom: 4.5rem;
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--bg-elev);
+  border: 1px solid var(--accent);
+  color: var(--text);
+  padding: 0.5rem 0.9rem;
+  z-index: 90;
+  font-size: 0.82rem;
+  font-family: var(--font-chrome);
+  white-space: nowrap;
+}
+
 /* Responsive: on small screens the participants panel overlays the grid
    instead of disappearing (the toggle button must keep working). */
 @media (max-width: 700px) {
@@ -505,5 +709,8 @@
   }
   .chatPanel {
     width: 100%;
+  }
+  .lobbyMain {
+    grid-template-columns: 1fr;
   }
 }

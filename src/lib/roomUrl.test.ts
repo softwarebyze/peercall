@@ -50,6 +50,11 @@ describe('parseRoomJoin', () => {
     expect(result).toEqual({ kind: 'room', roomId: 'local-room-1' })
   })
 
+  test('paste still accepts truncated UUID room ids', () => {
+    const result = parseRoomJoin({ text: '805d775b-cbe', origin, mode: 'paste' })
+    expect(result).toEqual({ kind: 'room', roomId: '805d775b-cbe' })
+  })
+
   test('empty is invalid', () => {
     expect(parseRoomJoin({ text: '  ', origin, mode: 'paste' })).toEqual({
       kind: 'invalid',

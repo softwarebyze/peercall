@@ -3,6 +3,7 @@ import { useState, useCallback, useRef, useEffect } from 'react'
 import { QrScanner } from '../components/QrScanner'
 import { IconChat, IconLock, IconMesh, IconQr, IconRecord } from '../components/Icons'
 import { parseRoomJoin } from '../lib/roomUrl'
+import { generateRoomId } from '../lib/roomId'
 import styles from './index.module.css'
 
 export const Route = createFileRoute('/')({
@@ -38,7 +39,7 @@ function Landing() {
   const start = useCallback(() => {
     const trimmed = storeName(name)
     if (!trimmed) return
-    const roomId = crypto.randomUUID().slice(0, 12)
+    const roomId = generateRoomId()
     void navigate({ to: '/room/$roomId', params: { roomId }, search: { host: 1 } })
   }, [name, navigate])
 
@@ -94,7 +95,7 @@ function Landing() {
 
         <div className={styles.startBlock}>
           <label className={styles.fieldLabel} htmlFor="display-name">
-            Your name
+            Name shown to others
           </label>
           <div className={styles.startRow}>
             <input
@@ -151,6 +152,23 @@ function Landing() {
           </div>
           {joinError && <p className={styles.joinError}>{joinError}</p>}
         </form>
+
+        <div className={styles.productFrame} aria-hidden>
+          <div className={styles.productBar}>
+            <div className="pulse-dot" />
+            <span className="accent">PeerCall</span>
+            <span>·</span>
+            <span>brave-otter-pine</span>
+            <span style={{ marginLeft: 'auto' }}>Copy invite</span>
+          </div>
+          <div className={styles.productTiles}>
+            <div className={styles.productYou}>
+              <span className={styles.productAvatar}>Y</span>
+              <span>You</span>
+            </div>
+            <div className={styles.productWait}>Waiting for others</div>
+          </div>
+        </div>
 
         {showScanner && (
           <QrScanner onScan={goToRoom} onClose={() => setShowScanner(false)} />

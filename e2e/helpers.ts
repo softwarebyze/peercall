@@ -11,12 +11,12 @@ export async function newPeer(
 }
 
 export async function passJoinGate(page: Page): Promise<void> {
-  const join = page.getByRole('button', { name: 'Join', exact: true })
+  const join = page.getByRole('button', { name: 'Join call' })
   try {
-    await join.waitFor({ state: 'visible', timeout: 5000 })
-    await join.click()
+    await join.waitFor({ state: 'visible', timeout: 8000 })
+    await join.click({ timeout: 20000 })
   } catch {
-    // Host skip, or already in the room.
+    // Already in the room (rejoin).
   }
 }
 

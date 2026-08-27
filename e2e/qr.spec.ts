@@ -11,5 +11,7 @@ test('QR scanner paste path joins a room', async ({ page }) => {
   await dialog.getByTestId('qr-paste').fill(`${page.url().replace(/\/$/, '')}/room/${id}`)
   await dialog.getByRole('button', { name: 'Join', exact: true }).click()
   await expect(page).toHaveURL(new RegExp(`/room/${id}`))
-  await expect(page.getByRole('heading', { name: 'Enter your name' })).toBeVisible()
+  await expect(page.getByTestId('lobby')).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Ready?' })).toBeVisible()
+  await expect(page.getByLabel('Name shown to others')).toHaveValue('Quinn')
 })

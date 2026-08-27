@@ -1,5 +1,6 @@
 import { useRef, useState, useCallback, useEffect } from 'react'
 import type { SignalMsg } from './useSignaling'
+import type { MediaHandoff } from './useLocalMedia'
 
 // Fallback if /config is unreachable. STUN only — TURN comes from the server
 // (/config) when TURN_* or free Metered Open Relay env vars are set.
@@ -57,6 +58,12 @@ export interface WebRTCState {
   mediaError: string | null
   cameraDeviceId: string | null
   micDeviceId: string | null
+  retryMedia: () => void
+  joinAudioOnly: () => void
+  joinListenOnly: () => void
+  hasVideo: boolean
+  hasAudio: boolean
+  listenOnly: boolean
 }
 
 export function useWebRTC(opts: {
@@ -65,8 +72,9 @@ export function useWebRTC(opts: {
   signalMessages: SignalMsg[]
   peers: { id: string; name: string; isHost: boolean }[]
   localName: string
+  initialMedia: MediaHandoff | null
 }): WebRTCState {
-  const { myId, sendSignal, signalMessages, peers, localName } = opts
+  const { myId, sendSignal, signalMessages, peers, localName, initialMedia } = opts
 
   const pcsRef = useRef<Map<string, RTCPeerConnection>>(new Map())
   const streamsRef = useRef<Map<string, MediaStream>>(new Map())
@@ -85,12 +93,19 @@ export function useWebRTC(opts: {
   const [localStream, setLocalStream] = useState<MediaStream | null>(null)
   const [remoteStreams, setRemoteStreams] = useState<PeerStream[]>([])
   const [connectionStates, setConnectionStates] = useState<Record<string, RTCPeerConnectionState>>({})
-  const [cameraOn, setCameraOn] = useState(true)
-  const [micOn, setMicOn] = useState(true)
+  const [cameraOn, setCameraOn] = useState(() =>
+    initialMedia?.kind === 'stream' ? initialMedia.cameraOn : true,
+  )
+  const [micOn, setMicOn] = useState(() =>
+    initialMedia?.kind === 'stream' ? initialMedia.micOn : true,
+  )
   const [screenSharing, setScreenSharing] = useState(false)
   const [mediaError, setMediaError] = useState<string | null>(null)
-  const cameraOnRef = useRef(true)
-  const micOnRef = useRef(true)
+  const [allowNoMedia, setAllowNoMedia] = useState(initialMedia?.kind === 'listen')
+  const allowNoMediaRef = useRef(allowNoMedia)
+  allowNoMediaRef.current = allowNoMedia
+  const cameraOnRef = useRef(initialMedia?.kind === 'stream' ? initialMedia.cameraOn : true)
+  const micOnRef = useRef(initialMedia?.kind === 'stream' ? initialMedia.micOn : true)
   const iceConfigRef = useRef<RTCConfiguration>(DEFAULT_ICE_SERVERS)
   // Don't create peer connections until we know the real ICE config —
   // otherwise early connections start STUN-only even when TURN is available.
@@ -164,11 +179,19 @@ export function useWebRTC(opts: {
       pcsRef.current.set(peerId, pc)
       connectionStatesRef.current.set(peerId, 'new')
 
-      if (localStreamRef.current) {
-        for (const track of localStreamRef.current.getTracks()) {
-          pc.addTrack(track, localStreamRef.current)
+      const stream = localStreamRef.current
+      let hasVideo = false
+      let hasAudio = false
+      if (stream) {
+        for (const track of stream.getTracks()) {
+          pc.addTrack(track, stream)
+          if (track.kind === 'video') hasVideo = true
+          if (track.kind === 'audio') hasAudio = true
         }
       }
+      // Audio-only / listen-only still need recv m-lines for the other side.
+      if (!hasVideo) pc.addTransceiver('video', { direction: 'recvonly' })
+      if (!hasAudio) pc.addTransceiver('audio', { direction: 'recvonly' })
 
       pc.ontrack = (ev) => {
         const stream =
@@ -197,7 +220,7 @@ export function useWebRTC(opts: {
         }
       }
 
-      if (initiator && localStreamRef.current) {
+      if (initiator) {
         pc.createOffer()
           .then((offer) => pc.setLocalDescription(offer))
           .then(() => {
@@ -225,7 +248,7 @@ export function useWebRTC(opts: {
 
   const reconnectPeer = useCallback(
     (peerId: string) => {
-      if (!localStreamRef.current) return
+      if (!localStreamRef.current && !allowNoMediaRef.current) return
       if (!peersRef.current.some((p) => p.id === peerId)) return
       if (pcsRef.current.has(peerId)) return
       // Only the initiator sends a fresh offer; the non-initiator waits for it.
@@ -245,7 +268,7 @@ export function useWebRTC(opts: {
 
   const acceptOffer = useCallback(
     (peerId: string, data: RTCSessionDescriptionInit) => {
-      if (!localStreamRef.current || !iceReadyRef.current) {
+      if ((!localStreamRef.current && !allowNoMediaRef.current) || !iceReadyRef.current) {
         pendingOffersRef.current.set(peerId, data)
         return
       }
@@ -273,7 +296,8 @@ export function useWebRTC(opts: {
   // config. Gating on the stream ensures every offer/answer carries our
   // tracks; gating on ICE ensures TURN is included from the first candidate.
   useEffect(() => {
-    if (!myId || !localStream || !iceReady) return
+    if (!myId || !iceReady) return
+    if (!localStream && !allowNoMedia) return
     for (const peer of peers) {
       if (peer.id === myId) continue
       if (!pcsRef.current.has(peer.id)) {
@@ -281,44 +305,72 @@ export function useWebRTC(opts: {
         createPC(peer.id, shouldInitiate)
       }
     }
-    // Process offers that arrived before our stream was ready
     for (const [peerId, data] of pendingOffersRef.current) {
       pendingOffersRef.current.delete(peerId)
       acceptOffer(peerId, data)
     }
-  }, [peers, myId, localStream, iceReady, createPC, acceptOffer])
+  }, [peers, myId, localStream, iceReady, allowNoMedia, createPC, acceptOffer])
 
-  // Init local media. Keep the stream across signaling reconnects (myId can
-  // change) — only stop tracks on unmount.
-  useEffect(() => {
-    if (!myId) return
-    if (localStreamRef.current) return
-    let cancelled = false
-    navigator.mediaDevices
-      .getUserMedia({ video: true, audio: true })
-      .then((stream) => {
-        if (cancelled) {
-          stream.getTracks().forEach((t) => t.stop())
-          return
-        }
-        localStreamRef.current = stream
-        setLocalStream(stream)
-        setMediaError(null)
-      })
-      .catch((err) => {
-        if (cancelled) return
+  const takeStream = useCallback((stream: MediaStream) => {
+    localStreamRef.current = stream
+    setLocalStream(stream)
+    setMediaError(null)
+  }, [])
+
+  const acquireMedia = useCallback(
+    async (constraints: { video: boolean; audio: boolean }) => {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia(constraints)
+        takeStream(stream)
+        stream.getVideoTracks().forEach((t) => {
+          t.enabled = cameraOnRef.current
+        })
+        stream.getAudioTracks().forEach((t) => {
+          t.enabled = micOnRef.current
+        })
+      } catch (err) {
+        const name =
+          typeof err === 'object' && err !== null && 'name' in err && typeof err.name === 'string'
+            ? err.name
+            : ''
         const msg =
-          err?.name === 'NotAllowedError'
-            ? 'Camera/mic access denied. Please allow permissions and reload.'
-            : err?.name === 'NotFoundError'
+          name === 'NotAllowedError'
+            ? 'Camera/mic access denied. Allow permissions, then retry.'
+            : name === 'NotFoundError'
               ? 'No camera or mic found on this device.'
               : 'Could not access camera or mic.'
         setMediaError(msg)
-      })
+      }
+    },
+    [takeStream],
+  )
+
+  // Init local media from the lobby handoff, or request it here (rejoin).
+  useEffect(() => {
+    if (!myId) return
+    if (localStreamRef.current) return
+    if (initialMedia?.kind === 'listen') {
+      setAllowNoMedia(true)
+      setMediaError(null)
+      return
+    }
+    if (initialMedia?.kind === 'stream') {
+      const live = initialMedia.stream.getTracks().some((t) => t.readyState === 'live')
+      if (live) {
+        takeStream(initialMedia.stream)
+        return
+      }
+    }
+    let cancelled = false
+    void acquireMedia({ video: true, audio: true }).then(() => {
+      if (cancelled && localStreamRef.current) {
+        localStreamRef.current.getTracks().forEach((t) => t.stop())
+      }
+    })
     return () => {
       cancelled = true
     }
-  }, [myId])
+  }, [myId, initialMedia, acquireMedia, takeStream])
 
   // Stop media only when the hook unmounts (leaving the room).
   useEffect(
@@ -514,5 +566,20 @@ export function useWebRTC(opts: {
     mediaError,
     cameraDeviceId: localStream?.getVideoTracks()[0]?.getSettings().deviceId ?? null,
     micDeviceId: localStream?.getAudioTracks()[0]?.getSettings().deviceId ?? null,
+    retryMedia: () => {
+      setAllowNoMedia(false)
+      void acquireMedia({ video: true, audio: true })
+    },
+    joinAudioOnly: () => {
+      setAllowNoMedia(false)
+      void acquireMedia({ video: false, audio: true })
+    },
+    joinListenOnly: () => {
+      setAllowNoMedia(true)
+      setMediaError(null)
+    },
+    hasVideo: (localStream?.getVideoTracks().length ?? 0) > 0,
+    hasAudio: (localStream?.getAudioTracks().length ?? 0) > 0,
+    listenOnly: allowNoMedia && !localStream,
   }
 }
