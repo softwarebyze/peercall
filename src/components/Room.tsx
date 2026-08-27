@@ -13,6 +13,12 @@ interface RoomProps {
   isHost: boolean
 }
 
+const statusCopy: Record<string, string> = {
+  connecting: 'Connecting to signaling server…',
+  waking: 'Waking up the server… this can take a few seconds after it has been idle.',
+  reconnecting: 'Connection lost — reconnecting to server…',
+}
+
 export function Room({ roomId, displayName, isHost }: RoomProps) {
   const [signalMessages, setSignalMessages] = useState<SignalMsg[]>([])
   const [peers, setPeers] = useState<PeerInfo[]>([])
@@ -20,6 +26,8 @@ export function Room({ roomId, displayName, isHost }: RoomProps) {
   const [chatOpen, setChatOpen] = useState(false)
   const [participantsOpen, setParticipantsOpen] = useState(false)
   const [callEnded, setCallEnded] = useState(false)
+  const [left, setLeft] = useState(false)
+  const [signalError, setSignalError] = useState<string | null>(null)
   const [devices, setDevices] = useState<{ video: MediaDeviceInfo[]; audio: MediaDeviceInfo[] }>({ video: [], audio: [] })
   const [copied, setCopied] = useState(false)
 
@@ -34,18 +42,24 @@ export function Room({ roomId, displayName, isHost }: RoomProps) {
         setChat((prev) => [...prev, msg.payload])
       }
       if (msg.t === 'call_ended') setCallEnded(true)
+      if (msg.t === 'error') setSignalError(msg.payload.message)
+      if (msg.t === 'joined') setSignalError(null)
     },
     []
   )
 
-  const { myId, connected, send } = useSignaling({ roomId, name: displayName, isHost, onMessage: handleSignal })
+  const { myId, connected, status, send, disconnect } = useSignaling({
+    roomId,
+    name: displayName,
+    isHost,
+    onMessage: handleSignal,
+  })
 
   const rtc = useWebRTC({
     myId,
     sendSignal: send,
     signalMessages,
     peers,
-    isHost,
     localName: displayName,
   })
 
@@ -61,16 +75,29 @@ export function Room({ roomId, displayName, isHost }: RoomProps) {
     })
   }, [])
 
-  // Leave on call ended
-  useEffect(() => {
-    if (callEnded) {
-      rtc.endCall()
-      window.location.href = '/'
-    }
-  }, [callEnded, rtc])
-
   // Derive isHost from server-authoritative peer list
   const isHostHere = peers.find((p) => p.id === myId)?.isHost ?? false
+
+  const leaveCall = useCallback(() => {
+    rtc.endCall()
+    disconnect()
+    setLeft(true)
+  }, [rtc, disconnect])
+
+  const endCallForEveryone = useCallback(() => {
+    send('end_call', {})
+    rtc.endCall()
+    disconnect()
+    setLeft(true)
+  }, [send, rtc, disconnect])
+
+  // Host ended the call for everyone → show the ended screen (not a hard redirect)
+  useEffect(() => {
+    if (callEnded && !left) {
+      rtc.endCall()
+      disconnect()
+    }
+  }, [callEnded, left, rtc, disconnect])
 
   const shareLink = useCallback(() => {
     const url = `${window.location.origin}/room/${roomId}`
@@ -80,18 +107,33 @@ export function Room({ roomId, displayName, isHost }: RoomProps) {
     })
   }, [roomId])
 
+  // Every peer the server knows about gets a tile — with an avatar and status
+  // while their media is still connecting, instead of being invisible.
   const allPeers = useMemo(() => {
     const me = {
-      id: myId ?? '',
+      id: myId ?? 'me',
       name: displayName,
       isHost: isHostHere,
       stream: rtc.localStream,
       isLocal: true,
       connectionState: 'connected' as RTCPeerConnectionState,
     }
-    const remotes = rtc.remoteStreams.map((r) => ({ ...r, isLocal: false }))
+    const remotes = peers
+      .filter((p) => p.id !== myId)
+      .map((p) => {
+        const media = rtc.remoteStreams.find((r) => r.id === p.id)
+        return {
+          id: p.id,
+          name: p.name,
+          isHost: p.isHost,
+          stream: media?.stream ?? null,
+          isLocal: false,
+          connectionState:
+            media?.connectionState ?? rtc.connectionStates[p.id] ?? ('new' as RTCPeerConnectionState),
+        }
+      })
     return [me, ...remotes]
-  }, [myId, displayName, isHostHere, rtc.localStream, rtc.remoteStreams])
+  }, [myId, displayName, isHostHere, peers, rtc.localStream, rtc.remoteStreams, rtc.connectionStates])
 
   const handleRecordToggle = () => {
     if (recorder.recording) {
@@ -101,12 +143,52 @@ export function Room({ roomId, displayName, isHost }: RoomProps) {
     }
   }
 
+  if (callEnded && !left) {
+    return (
+      <div className={styles.endScreen}>
+        <h2 style={{ margin: 0, letterSpacing: '-0.03em' }}>Call ended</h2>
+        <p className="dim">The host ended this call for everyone.</p>
+        <div style={{ display: 'flex', gap: '0.5rem' }}>
+          <a className="btn-primary" href="/">Back to home</a>
+        </div>
+      </div>
+    )
+  }
+
+  if (left) {
+    return (
+      <div className={styles.endScreen}>
+        <h2 style={{ margin: 0, letterSpacing: '-0.03em' }}>You left the call</h2>
+        <p className="dim">
+          Room <span className="accent">{roomId}</span> — you can rejoin as long as someone is still in it.
+        </p>
+        <div style={{ display: 'flex', gap: '0.5rem' }}>
+          <button className="btn-primary" onClick={() => window.location.reload()}>
+            Rejoin
+          </button>
+          <a className="btn-ghost" href="/" style={{ display: 'inline-flex', alignItems: 'center' }}>
+            Back to home
+          </a>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className={styles.room}>
       {!connected && (
         <div className={styles.overlay}>
           <div className={styles.spinner} />
-          <span className="dim">Connecting to signaling server…</span>
+          <span className="dim" style={{ maxWidth: 320, textAlign: 'center' }}>
+            {statusCopy[status] ?? statusCopy.connecting}
+          </span>
+        </div>
+      )}
+
+      {signalError && (
+        <div className={styles.mediaError}>
+          <span className={styles.mediaErrorIcon}>⚠</span>
+          <span>{signalError}</span>
         </div>
       )}
 
@@ -114,6 +196,12 @@ export function Room({ roomId, displayName, isHost }: RoomProps) {
         <div className={styles.mediaError}>
           <span className={styles.mediaErrorIcon}>⚠</span>
           <span>{rtc.mediaError}</span>
+        </div>
+      )}
+
+      {connected && !rtc.localStream && !rtc.mediaError && (
+        <div className={styles.mediaInfo}>
+          <span>Starting camera and microphone…</span>
         </div>
       )}
 
@@ -155,6 +243,8 @@ export function Room({ roomId, displayName, isHost }: RoomProps) {
               isLocal={p.isLocal}
               isHost={p.isHost}
               connectionState={p.connectionState}
+              videoOff={p.isLocal ? !rtc.cameraOn : undefined}
+              micOff={p.isLocal ? !rtc.micOn : undefined}
             />
           ))}
         </div>
@@ -202,8 +292,8 @@ export function Room({ roomId, displayName, isHost }: RoomProps) {
         onRecordToggle={handleRecordToggle}
         onToggleChat={() => setChatOpen((v) => !v)}
         onSwitchDevice={rtc.switchDevice}
-        onLeave={() => { rtc.endCall(); window.location.href = '/' }}
-        onEndCall={() => { rtc.endCall(); window.location.href = '/' }}
+        onLeave={leaveCall}
+        onEndCall={endCallForEveryone}
       />
 
       {chatOpen && (

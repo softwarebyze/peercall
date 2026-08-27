@@ -154,6 +154,38 @@
   pointer-events: none;
 }
 
+/* Non-error status banner (e.g. camera starting) */
+.mediaInfo {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  background: var(--bg-elev);
+  border-bottom: 1px solid var(--line);
+  color: var(--text-dim);
+  font-size: 0.8rem;
+  flex-shrink: 0;
+}
+
+/* Left / call-ended screens */
+.endScreen {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  background: var(--bg);
+  text-align: center;
+  padding: 1rem;
+}
+
+/* Muted mic badge on tile label */
+.mutedBadge {
+  font-size: 0.68rem;
+  color: var(--danger);
+}
+
 /* Media error banner */
 .mediaError {
   display: flex;
@@ -361,10 +393,17 @@
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 
-/* Responsive */
+/* Responsive: on small screens the participants panel overlays the grid
+   instead of disappearing (the toggle button must keep working). */
 @media (max-width: 700px) {
   .participantsPanel {
-    display: none;
+    position: fixed;
+    top: 2.6rem;
+    right: 0;
+    bottom: 3.5rem;
+    width: min(240px, 80vw);
+    border-left: 1px solid var(--line);
+    z-index: 30;
   }
 }
 @media (max-width: 540px) {

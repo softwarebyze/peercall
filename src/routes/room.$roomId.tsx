@@ -1,5 +1,5 @@
 import { createFileRoute } from '@tanstack/react-router'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Room } from '../components/Room'
 
 export const Route = createFileRoute('/room/$roomId')({
@@ -11,12 +11,27 @@ export const Route = createFileRoute('/room/$roomId')({
 
 function RoomPage() {
   const { roomId } = Route.useParams()
-  const search = Route.useSearch() as Record<string, string>
-  const isHost = search.host === '1'
+  const search = Route.useSearch() as Record<string, unknown>
+  // TanStack Router parses ?host=1 as the number 1, so compare loosely.
+  const isHost = String(search.host ?? '') === '1'
 
-  const stored = typeof window !== 'undefined' ? localStorage.getItem('peercall_name') : null
-  const [displayName, setDisplayName] = useState(stored ?? '')
-  const [joined, setJoined] = useState(!!stored)
+  const [displayName, setDisplayName] = useState('')
+  const [joined, setJoined] = useState(false)
+  const [ready, setReady] = useState(false)
+
+  // Read localStorage after mount — reading it during render makes the server
+  // and client HTML disagree, and React leaves the mismatched attributes
+  // (like a disabled Join button) unpatched.
+  useEffect(() => {
+    const stored = localStorage.getItem('peercall_name') ?? ''
+    setDisplayName(stored)
+    // Hosts arrive straight from the landing page where they just typed their
+    // name — skip the gate. Invitees always get to confirm/edit their name.
+    if (isHost && stored) setJoined(true)
+    setReady(true)
+  }, [isHost])
+
+  if (!ready) return null
 
   if (!joined) {
     return (

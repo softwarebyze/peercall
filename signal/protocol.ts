@@ -22,6 +22,69 @@ export interface Room {
 
 export const rooms = new Map<RoomId, Room>();
 
+const STUN_SERVERS: RTCIceServer[] = [
+  { urls: "stun:stun.l.google.com:19302" },
+  { urls: "stun:stun1.l.google.com:19302" },
+  { urls: "stun:stun.cloudflare.com:3478" },
+];
+
+// Cache Metered Open Relay credentials briefly so /config stays fast.
+let meteredCache: { at: number; servers: RTCIceServer[] } | null = null;
+const METERED_CACHE_MS = 5 * 60 * 1000;
+
+/**
+ * ICE config for /config.
+ *
+ * Priority:
+ * 1. TURN_URLS + TURN_USERNAME + TURN_CREDENTIAL (any TURN provider / coturn)
+ * 2. Free Metered Open Relay via METERED_DOMAIN + METERED_TURN_API_KEY
+ *    (sign up: https://www.metered.ca/tools/openrelay/)
+ * 3. STUN only — many home NATs still work; hard NATs will fail until TURN is set
+ */
+export async function buildIceConfig(): Promise<{ iceServers: RTCIceServer[] }> {
+  const turnUrls =
+    process.env.TURN_URLS?.split(",").map((s) => s.trim()).filter(Boolean) ?? [];
+  if (turnUrls.length > 0) {
+    return {
+      iceServers: [
+        ...STUN_SERVERS,
+        {
+          urls: turnUrls,
+          username: process.env.TURN_USERNAME ?? "",
+          credential: process.env.TURN_CREDENTIAL ?? "",
+        },
+      ],
+    };
+  }
+
+  const domain = process.env.METERED_DOMAIN?.trim();
+  const apiKey = process.env.METERED_TURN_API_KEY?.trim();
+  if (domain && apiKey) {
+    if (meteredCache && Date.now() - meteredCache.at < METERED_CACHE_MS) {
+      return { iceServers: meteredCache.servers };
+    }
+    try {
+      const host = domain.replace(/^https?:\/\//, "").replace(/\/$/, "");
+      const res = await fetch(
+        `https://${host}/api/v1/turn/credentials?apiKey=${encodeURIComponent(apiKey)}`
+      );
+      if (res.ok) {
+        const iceServers = (await res.json()) as RTCIceServer[];
+        if (Array.isArray(iceServers) && iceServers.length > 0) {
+          meteredCache = { at: Date.now(), servers: iceServers };
+          return { iceServers };
+        }
+      } else {
+        console.warn(`Metered TURN credentials HTTP ${res.status}`);
+      }
+    } catch (err) {
+      console.warn("Metered TURN credentials fetch failed:", err);
+    }
+  }
+
+  return { iceServers: [...STUN_SERVERS] };
+}
+
 export function pack(t: string, payload: unknown) {
   return JSON.stringify({ t, payload });
 }

@@ -1,6 +1,8 @@
 import { useRef, useState, useCallback, useEffect } from 'react'
 import type { SignalMsg } from './useSignaling'
 
+// Fallback if /config is unreachable. STUN only — TURN comes from the server
+// (/config) when TURN_* or free Metered Open Relay env vars are set.
 const DEFAULT_ICE_SERVERS: RTCConfiguration = {
   iceServers: [
     { urls: 'stun:stun.l.google.com:19302' },
@@ -28,6 +30,7 @@ export interface PeerStream {
 export interface WebRTCState {
   localStream: MediaStream | null
   remoteStreams: PeerStream[]
+  connectionStates: Record<string, RTCPeerConnectionState>
   send: (t: string, p: unknown) => void
   myId: string | null
   setCamera: (on: boolean) => void
@@ -47,10 +50,9 @@ export function useWebRTC(opts: {
   sendSignal: (t: string, p: unknown) => void
   signalMessages: SignalMsg[]
   peers: { id: string; name: string; isHost: boolean }[]
-  isHost: boolean
   localName: string
 }): WebRTCState {
-  const { myId, sendSignal, signalMessages, peers, isHost, localName } = opts
+  const { myId, sendSignal, signalMessages, peers, localName } = opts
 
   const pcsRef = useRef<Map<string, RTCPeerConnection>>(new Map())
   const streamsRef = useRef<Map<string, MediaStream>>(new Map())
@@ -68,6 +70,7 @@ export function useWebRTC(opts: {
 
   const [localStream, setLocalStream] = useState<MediaStream | null>(null)
   const [remoteStreams, setRemoteStreams] = useState<PeerStream[]>([])
+  const [connectionStates, setConnectionStates] = useState<Record<string, RTCPeerConnectionState>>({})
   const [cameraOn, setCameraOn] = useState(true)
   const [micOn, setMicOn] = useState(true)
   const [screenSharing, setScreenSharing] = useState(false)
@@ -75,12 +78,20 @@ export function useWebRTC(opts: {
   const cameraOnRef = useRef(true)
   const micOnRef = useRef(true)
   const iceConfigRef = useRef<RTCConfiguration>(DEFAULT_ICE_SERVERS)
+  // Don't create peer connections until we know the real ICE config —
+  // otherwise early connections start STUN-only even when TURN is available.
+  const [iceReady, setIceReady] = useState(false)
 
-  // Fetch TURN config on mount
   useEffect(() => {
+    let cancelled = false
     fetchIceConfig().then((config) => {
+      if (cancelled) return
       iceConfigRef.current = config
+      setIceReady(true)
     })
+    return () => {
+      cancelled = true
+    }
   }, [])
 
   const refreshRemote = useCallback(() => {
@@ -96,6 +107,7 @@ export function useWebRTC(opts: {
       })
     }
     setRemoteStreams(arr)
+    setConnectionStates(Object.fromEntries(connectionStatesRef.current))
   }, [])
 
   const updateConnectionState = useCallback(
@@ -117,6 +129,18 @@ export function useWebRTC(opts: {
     pendingCandidatesRef.current.delete(peerId)
     pendingOffersRef.current.delete(peerId)
   }, [])
+
+  // If the signaling connection dropped and we rejoined, we get a new id and
+  // everyone else saw us leave. Tear down stale connections so the mesh
+  // renegotiates cleanly under the new id.
+  const prevMyIdRef = useRef<string | null>(null)
+  useEffect(() => {
+    if (prevMyIdRef.current && myId && prevMyIdRef.current !== myId) {
+      for (const [id] of pcsRef.current) cleanupPC(id)
+      refreshRemote()
+    }
+    if (myId) prevMyIdRef.current = myId
+  }, [myId, cleanupPC, refreshRemote])
 
   const reconnectPeerRef = useRef<(peerId: string) => void>(() => {})
 
@@ -202,9 +226,12 @@ export function useWebRTC(opts: {
     reconnectPeerRef.current = reconnectPeer
   }, [reconnectPeer])
 
+  const iceReadyRef = useRef(false)
+  iceReadyRef.current = iceReady
+
   const acceptOffer = useCallback(
     (peerId: string, data: RTCSessionDescriptionInit) => {
-      if (!localStreamRef.current) {
+      if (!localStreamRef.current || !iceReadyRef.current) {
         pendingOffersRef.current.set(peerId, data)
         return
       }
@@ -228,10 +255,11 @@ export function useWebRTC(opts: {
     [createPC, flushPendingCandidates, sendSignal]
   )
 
-  // Create connections for all peers once we have a local stream.
-  // Gating on the stream ensures every offer/answer carries our tracks.
+  // Create connections for all peers once we have a local stream AND the ICE
+  // config. Gating on the stream ensures every offer/answer carries our
+  // tracks; gating on ICE ensures TURN is included from the first candidate.
   useEffect(() => {
-    if (!myId || !localStream) return
+    if (!myId || !localStream || !iceReady) return
     for (const peer of peers) {
       if (peer.id === myId) continue
       if (!pcsRef.current.has(peer.id)) {
@@ -244,11 +272,13 @@ export function useWebRTC(opts: {
       pendingOffersRef.current.delete(peerId)
       acceptOffer(peerId, data)
     }
-  }, [peers, myId, localStream, createPC, acceptOffer])
+  }, [peers, myId, localStream, iceReady, createPC, acceptOffer])
 
-  // Init local media
+  // Init local media. Keep the stream across signaling reconnects (myId can
+  // change) — only stop tracks on unmount.
   useEffect(() => {
     if (!myId) return
+    if (localStreamRef.current) return
     let cancelled = false
     navigator.mediaDevices
       .getUserMedia({ video: true, audio: true })
@@ -273,9 +303,16 @@ export function useWebRTC(opts: {
       })
     return () => {
       cancelled = true
-      localStreamRef.current?.getTracks().forEach((t) => t.stop())
     }
   }, [myId])
+
+  // Stop media only when the hook unmounts (leaving the room).
+  useEffect(
+    () => () => {
+      localStreamRef.current?.getTracks().forEach((t) => t.stop())
+    },
+    []
+  )
 
   // Keep tracks in sync with the current local stream on existing PCs
   useEffect(() => {
@@ -425,15 +462,20 @@ export function useWebRTC(opts: {
     []
   )
 
+  // Tear down local media and all peer connections. Whether to also end the
+  // call for everyone (host action) is decided by the caller via signaling.
   const endCall = useCallback(() => {
     for (const [id] of pcsRef.current) cleanupPC(id)
     localStreamRef.current?.getTracks().forEach((t) => t.stop())
-    if (isHost) sendSignal('end_call', {})
-  }, [isHost, sendSignal, cleanupPC])
+    localStreamRef.current = null
+    setLocalStream(null)
+    refreshRemote()
+  }, [cleanupPC, refreshRemote])
 
   return {
     localStream,
     remoteStreams,
+    connectionStates,
     send: sendSignal,
     myId,
     setCamera: setCameraState,

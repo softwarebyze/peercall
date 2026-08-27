@@ -23,6 +23,13 @@ export type SignalMsg =
 
 type SignalHandler = (msg: SignalMsg) => void
 
+export type SignalStatus = 'connecting' | 'waking' | 'connected' | 'reconnecting'
+
+const MAX_BACKOFF_MS = 5000
+// If the very first connection takes this long, the server is probably doing
+// a cold start (e.g. Fly machine waking up) — tell the user that.
+const WAKING_AFTER_MS = 4000
+
 export function useSignaling(opts: {
   roomId: string
   name: string
@@ -34,35 +41,91 @@ export function useSignaling(opts: {
   const handlerRef = useRef(onMessage)
   handlerRef.current = onMessage
   const [myId, setMyId] = useState<string | null>(null)
-  const [connected, setConnected] = useState(false)
+  const [status, setStatus] = useState<SignalStatus>('connecting')
+  const stopRef = useRef<() => void>(() => {})
 
   useEffect(() => {
-    const signalUrl = getSignalUrl()
-    const ws = new WebSocket(signalUrl)
-    wsRef.current = ws
+    // Per-effect-run closed flag: a shared ref would let a stale socket's
+    // async onclose (from strict-mode remounts or intentional close) schedule
+    // a reconnect for the new run and produce ghost duplicate joins.
+    let closed = false
+    let attempt = 0
+    let everConnected = false
+    let retryTimer: ReturnType<typeof setTimeout> | null = null
+    let wakingTimer: ReturnType<typeof setTimeout> | null = null
 
-    ws.onopen = () => {
-      ws.send(JSON.stringify({ t: 'join', payload: { roomId, name, isHost } }))
-    }
-    ws.onmessage = (ev) => {
-      try {
-        const msg: SignalMsg = JSON.parse(ev.data)
-        if (msg.t === 'joined') {
-          setMyId(msg.payload.id)
-          setConnected(true)
+    const connect = () => {
+      if (closed) return
+      const ws = new WebSocket(getSignalUrl())
+      wsRef.current = ws
+
+      if (!everConnected && attempt === 0) {
+        wakingTimer = setTimeout(() => {
+          setStatus((s) => (s === 'connecting' ? 'waking' : s))
+        }, WAKING_AFTER_MS)
+      }
+
+      ws.onopen = () => {
+        if (closed) {
+          ws.close()
+          return
         }
-        handlerRef.current(msg)
-      } catch {}
+        attempt = 0
+        ws.send(JSON.stringify({ t: 'join', payload: { roomId, name, isHost } }))
+      }
+      ws.onmessage = (ev) => {
+        if (closed) return
+        try {
+          const msg: SignalMsg = JSON.parse(ev.data)
+          if (msg.t === 'joined') {
+            everConnected = true
+            if (wakingTimer) clearTimeout(wakingTimer)
+            setMyId(msg.payload.id)
+            setStatus('connected')
+          }
+          handlerRef.current(msg)
+        } catch {}
+      }
+      ws.onclose = () => {
+        if (closed) return
+        setStatus(everConnected ? 'reconnecting' : (attempt > 0 ? 'waking' : 'connecting'))
+        const delay = Math.min(500 * 2 ** attempt, MAX_BACKOFF_MS)
+        attempt += 1
+        retryTimer = setTimeout(connect, delay)
+      }
+      ws.onerror = () => {
+        // onclose fires after onerror; reconnect is scheduled there
+      }
     }
-    ws.onclose = () => setConnected(false)
-    ws.onerror = () => setConnected(false)
 
-    return () => { ws.close(); wsRef.current = null; setConnected(false); }
+    const stop = () => {
+      closed = true
+      if (retryTimer) clearTimeout(retryTimer)
+      if (wakingTimer) clearTimeout(wakingTimer)
+      wsRef.current?.close()
+      wsRef.current = null
+    }
+    stopRef.current = stop
+
+    connect()
+
+    return () => {
+      stop()
+      setStatus('connecting')
+      setMyId(null)
+    }
   }, [roomId, name, isHost])
 
   const send = useCallback((t: string, payload: unknown) => {
-    wsRef.current?.send(JSON.stringify({ t, payload }))
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ t, payload }))
+    }
   }, [])
 
-  return { myId, connected, send }
+  // Intentional disconnect (leaving the call): stop auto-reconnect.
+  const disconnect = useCallback(() => {
+    stopRef.current()
+  }, [])
+
+  return { myId, connected: status === 'connected', status, send, disconnect }
 }

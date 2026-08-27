@@ -111,13 +111,12 @@ export function ControlsBar(props: ControlsBarProps) {
           💬
         </button>
 
-        {props.isHost ? (
+        <button className="btn-danger" onClick={props.onLeave} title="Leave call">
+          Leave
+        </button>
+        {props.isHost && (
           <button className="btn-danger" onClick={props.onEndCall} title="End call for all">
-            End Call
-          </button>
-        ) : (
-          <button className="btn-danger" onClick={props.onLeave} title="Leave call">
-            Leave
+            End for everyone
           </button>
         )}
       </div>
