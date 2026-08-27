@@ -5,11 +5,34 @@ test.describe('landing', () => {
     await page.goto('/')
     await expect(page.getByRole('heading', { name: /No servers/i })).toBeVisible()
     await expect(page.getByText('Name shown to others')).toBeVisible()
-    await expect(page.getByRole('button', { name: 'Start call' })).toBeDisabled()
+    await expect(page.getByRole('button', { name: 'Start call' })).toBeEnabled()
+    await expect(page.getByRole('button', { name: 'Join', exact: true })).toBeEnabled()
     await expect(page.getByTestId('join-link-input')).toBeVisible()
     await expect(page.getByRole('button', { name: 'Scan QR code to join' })).toBeVisible()
-    await page.getByPlaceholder('Name').fill('Ada')
-    await expect(page.getByRole('button', { name: 'Start call' })).toBeEnabled()
+  })
+
+  test('empty start click stays on home and asks for a name', async ({ page }) => {
+    await page.goto('/')
+    await page.getByRole('button', { name: 'Start call' }).click()
+    await expect(page).toHaveURL(/\/$/)
+    const name = page.getByLabel('Name shown to others')
+    await expect(name).toBeFocused()
+    await expect(page.getByTestId('name-error')).toHaveText('Enter a name to start')
+    await name.fill('Ada')
+    await expect(page.getByTestId('name-error')).toHaveCount(0)
+    await page.getByRole('button', { name: 'Start call' }).click()
+    await expect(page).toHaveURL(/\/room\/[a-z]+-[a-z]+-[a-z]+\?host=1\b/)
+    await expect(page.getByTestId('lobby')).toBeVisible()
+  })
+
+  test('empty join click stays on home and asks for a link', async ({ page }) => {
+    await page.goto('/')
+    await page.getByRole('button', { name: 'Join', exact: true }).click()
+    await expect(page).toHaveURL(/\/$/)
+    await expect(page.getByTestId('join-link-input')).toBeFocused()
+    await expect(page.getByTestId('join-error')).toHaveText('Paste a room link or id.')
+    await page.getByTestId('join-link-input').fill('/room/invite-room-1')
+    await expect(page.getByTestId('join-error')).toHaveCount(0)
   })
 
   test('start call opens a lobby, then the live room', async ({ page }) => {

@@ -50,6 +50,8 @@
 
 .startBlock,
 .joinBlock {
+  position: relative;
+  z-index: 2;
   width: 100%;
   max-width: 28rem;
   display: flex;
@@ -72,6 +74,8 @@
 }
 
 .startRow {
+  position: relative;
+  z-index: 2;
   display: flex;
   gap: 0.4rem;
   width: 100%;
@@ -83,13 +87,17 @@
   width: 100%;
 }
 
+.nameInputInvalid {
+  border-color: var(--danger);
+}
+
 .scanBtn {
   padding: 0.55rem 0.7rem;
   color: var(--accent);
   border-color: var(--line-strong);
 }
 
-.joinError {
+.fieldError {
   margin: 0;
   color: var(--danger);
   font-size: 0.78rem;
@@ -139,6 +147,8 @@
 .footer {
   position: fixed;
   bottom: 0;
+  left: 0;
+  z-index: 1;
   width: 100%;
   display: flex;
   justify-content: center;
@@ -148,6 +158,11 @@
   border-top: 1px solid var(--line);
   background: var(--bg);
   font-family: var(--font-chrome);
+  /* Decorative bar must not eat CTA clicks if a short viewport overlaps. */
+  pointer-events: none;
+}
+.footer a {
+  pointer-events: auto;
 }
 
 .footerLink {
@@ -163,6 +178,7 @@
   border: 1px solid var(--line);
   background: var(--bg-elev);
   overflow: hidden;
+  pointer-events: none;
 }
 .productBar {
   display: flex;
@@ -206,5 +222,10 @@
   font-weight: 700;
 }
 
+@media (max-width: 540px) {
+  .features { grid-template-columns: 1fr; }
+  .startRow { flex-wrap: wrap; }
+  .nameInput { flex: 1 1 100%; }
   .productTiles { grid-template-columns: 1fr; min-height: 7rem; }
   .productYou { border-right: none; border-bottom: 1px solid var(--line); }
+}

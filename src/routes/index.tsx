@@ -20,10 +20,12 @@ function storeName(name: string) {
 function Landing() {
   const navigate = useNavigate()
   const inputRef = useRef<HTMLInputElement>(null)
+  const joinRef = useRef<HTMLInputElement>(null)
   const [name, setName] = useState(() => {
     if (typeof window !== 'undefined') return localStorage.getItem('peercall_name') ?? ''
     return ''
   })
+  const [nameError, setNameError] = useState<string | null>(null)
   const [joinInput, setJoinInput] = useState('')
   const [joinError, setJoinError] = useState<string | null>(null)
   const [showScanner, setShowScanner] = useState(false)
@@ -38,7 +40,12 @@ function Landing() {
 
   const start = useCallback(() => {
     const trimmed = storeName(name)
-    if (!trimmed) return
+    if (!trimmed) {
+      setNameError('Enter a name to start')
+      inputRef.current?.focus()
+      return
+    }
+    setNameError(null)
     const roomId = generateRoomId()
     void navigate({ to: '/room/$roomId', params: { roomId }, search: { host: 1 } })
   }, [name, navigate])
@@ -53,6 +60,11 @@ function Landing() {
   )
 
   const joinExisting = useCallback(() => {
+    if (!joinInput.trim()) {
+      setJoinError('Paste a room link or id.')
+      joinRef.current?.focus()
+      return
+    }
     const parsed = parseRoomJoin({
       text: joinInput,
       origin: window.location.origin,
@@ -65,6 +77,7 @@ function Landing() {
         return
       case 'invalid':
         setJoinError('Need a /room/ link or a room id.')
+        joinRef.current?.focus()
         return
       default: {
         const _exhaustive: never = parsed
@@ -101,17 +114,22 @@ function Landing() {
             <input
               id="display-name"
               ref={inputRef}
-              className={styles.nameInput}
+              className={`${styles.nameInput} ${nameError ? styles.nameInputInvalid : ''}`}
               type="text"
               placeholder="Name"
               value={name}
-              onChange={(e) => setName(e.target.value)}
+              onChange={(e) => {
+                setName(e.target.value)
+                if (nameError) setNameError(null)
+              }}
               onKeyDown={(e) => e.key === 'Enter' && start()}
               maxLength={30}
               autoFocus
               autoComplete="nickname"
+              aria-invalid={nameError ? true : undefined}
+              aria-describedby={nameError ? 'name-error' : undefined}
             />
-            <button className="btn-primary" onClick={start} disabled={!name.trim()} type="button">
+            <button className="btn-primary" onClick={start} type="button">
               Start call
             </button>
             <button
@@ -124,6 +142,11 @@ function Landing() {
               <IconQr />
             </button>
           </div>
+          {nameError && (
+            <p className={styles.fieldError} id="name-error" data-testid="name-error" role="alert">
+              {nameError}
+            </p>
+          )}
         </div>
 
         <form
@@ -139,18 +162,28 @@ function Landing() {
           <div className={styles.startRow}>
             <input
               id="join-link"
-              className={styles.nameInput}
+              ref={joinRef}
+              className={`${styles.nameInput} ${joinError ? styles.nameInputInvalid : ''}`}
               type="text"
               placeholder="Paste room link or id"
               value={joinInput}
-              onChange={(e) => setJoinInput(e.target.value)}
+              onChange={(e) => {
+                setJoinInput(e.target.value)
+                if (joinError) setJoinError(null)
+              }}
               data-testid="join-link-input"
+              aria-invalid={joinError ? true : undefined}
+              aria-describedby={joinError ? 'join-error' : undefined}
             />
-            <button className="btn-ghost" type="submit" disabled={!joinInput.trim()}>
+            <button className="btn-ghost" type="submit">
               Join
             </button>
           </div>
-          {joinError && <p className={styles.joinError}>{joinError}</p>}
+          {joinError && (
+            <p className={styles.fieldError} id="join-error" data-testid="join-error" role="alert">
+              {joinError}
+            </p>
+          )}
         </form>
 
         <div className={styles.productFrame} aria-hidden>
