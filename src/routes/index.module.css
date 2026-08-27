@@ -3,16 +3,17 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
-  padding: 2rem;
+  justify-content: flex-start;
+  padding: 3rem 1.5rem 4.5rem;
 }
 
 .hero {
   max-width: 640px;
+  width: 100%;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 1.8rem;
+  gap: 1.1rem;
 }
 
 .badge {
@@ -21,84 +22,147 @@
   gap: 0.5rem;
   padding: 0.35rem 0.75rem;
   border: 1px solid var(--line-strong);
-  font-size: 0.7rem;
-  letter-spacing: 0.06em;
+  font-size: 0.68rem;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--text-dim);
+  font-family: var(--font-chrome);
 }
 
 .title {
-  font-size: clamp(2.4rem, 6vw, 3.8rem);
+  font-size: clamp(2.3rem, 6vw, 3.6rem);
   font-weight: 700;
-  line-height: 1.08;
-  letter-spacing: -0.04em;
+  line-height: 1.06;
+  letter-spacing: -0.045em;
   text-align: center;
+  font-family: var(--font-chrome);
+  margin: 0;
 }
 
 .sub {
   text-align: center;
   color: var(--text-dim);
-  font-size: 0.95rem;
-  line-height: 1.55;
-  max-width: 480px;
+  font-size: 1rem;
+  line-height: 1.6;
+  max-width: 34rem;
+  margin: 0;
+}
+
+.startBlock,
+.joinBlock {
+  position: relative;
+  z-index: 2;
+  width: 100%;
+  max-width: 28rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.fieldLabel {
+  font-family: var(--font-chrome);
+  font-size: 0.65rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+
+.nameHint {
+  margin: 0;
+  font-size: 0.78rem;
+  color: var(--text-dim);
 }
 
 .startRow {
+  position: relative;
+  z-index: 2;
   display: flex;
-  gap: 0.5rem;
+  gap: 0.4rem;
   width: 100%;
-  max-width: 420px;
 }
 
 .nameInput {
   flex: 1;
   min-width: 0;
+  width: 100%;
+}
+
+.nameInputInvalid {
+  border-color: var(--danger);
+}
+
+.scanBtn {
+  padding: 0.55rem 0.7rem;
+  color: var(--accent);
+  border-color: var(--line-strong);
+}
+
+.fieldError {
+  margin: 0;
+  color: var(--danger);
+  font-size: 0.78rem;
 }
 
 .features {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 1rem;
+  gap: 0.75rem;
   width: 100%;
-  margin-top: 1rem;
+  margin-top: 0.5rem;
 }
 
 .feature {
   display: flex;
-  gap: 0.6rem;
-  padding: 0.9rem;
+  gap: 0.7rem;
+  padding: 0.85rem 0.9rem;
   border: 1px solid var(--line);
 }
 
-.featureIcon {
-  font-size: 1.3rem;
+.featureMark {
+  width: 2rem;
+  height: 2rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--line-strong);
+  color: var(--accent);
   flex-shrink: 0;
 }
 
 .feature strong {
   display: block;
-  margin-bottom: 0.15rem;
-  font-size: 0.85rem;
+  margin-bottom: 0.2rem;
+  font-size: 0.82rem;
+  font-family: var(--font-chrome);
+  letter-spacing: -0.02em;
 }
 
 .feature p {
   margin: 0;
-  font-size: 0.78rem;
+  font-size: 0.8rem;
   color: var(--text-dim);
-  line-height: 1.4;
+  line-height: 1.45;
 }
 
 .footer {
   position: fixed;
   bottom: 0;
+  left: 0;
+  z-index: 1;
   width: 100%;
   display: flex;
   justify-content: center;
   gap: 0.6rem;
-  padding: 0.75rem;
+  padding: 0.7rem;
   font-size: 0.7rem;
   border-top: 1px solid var(--line);
   background: var(--bg);
+  font-family: var(--font-chrome);
+  /* Decorative bar must not eat CTA clicks if a short viewport overlaps. */
+  pointer-events: none;
+}
+.footer a {
+  pointer-events: auto;
 }
 
 .footerLink {
@@ -109,7 +173,59 @@
   opacity: 0.8;
 }
 
+.productFrame {
+  width: 100%;
+  border: 1px solid var(--line);
+  background: var(--bg-elev);
+  overflow: hidden;
+  pointer-events: none;
+}
+.productBar {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.45rem 0.7rem;
+  border-bottom: 1px solid var(--line);
+  font-family: var(--font-chrome);
+  font-size: 0.68rem;
+  color: var(--text-dim);
+}
+.productTiles {
+  display: grid;
+  grid-template-columns: 1.15fr 0.85fr;
+  min-height: 8.5rem;
+}
+.productYou,
+.productWait {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+}
+.productYou {
+  border-right: 1px solid var(--line);
+}
+.productWait {
+  color: var(--text-dim);
+  font-size: 0.8rem;
+}
+.productAvatar {
+  width: 2.4rem;
+  height: 2.4rem;
+  border: 1px solid var(--accent-dim);
+  color: var(--accent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-chrome);
+  font-weight: 700;
+}
+
 @media (max-width: 540px) {
   .features { grid-template-columns: 1fr; }
-  .startRow { flex-direction: column; }
+  .startRow { flex-wrap: wrap; }
+  .nameInput { flex: 1 1 100%; }
+  .productTiles { grid-template-columns: 1fr; min-height: 7rem; }
+  .productYou { border-right: none; border-bottom: 1px solid var(--line); }
 }

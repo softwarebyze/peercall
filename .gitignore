@@ -9,3 +9,7 @@ dist
 .argent
 .opencode
 demo-artifacts
+e2e/recordings
+playwright-report
+test-results
+blob-report
