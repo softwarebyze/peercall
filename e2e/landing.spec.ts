@@ -15,7 +15,7 @@ test.describe('landing', () => {
     await page.goto('/')
     await page.getByPlaceholder('Name').fill('Ada')
     await page.getByRole('button', { name: 'Start call' }).click()
-    await expect(page).toHaveURL(/\/room\/.+[?&]host=1/)
+    await expect(page).toHaveURL(/\/room\/.+\?host=1\b/)
     await expect(page.getByRole('button', { name: 'Join', exact: true })).toHaveCount(0)
     await expect(page.getByText('PeerCall').first()).toBeVisible()
     await expect(page.getByTitle('Leave call')).toBeVisible({ timeout: 20000 })

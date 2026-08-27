@@ -39,7 +39,7 @@ function Landing() {
     const trimmed = storeName(name)
     if (!trimmed) return
     const roomId = crypto.randomUUID().slice(0, 12)
-    void navigate({ to: '/room/$roomId', params: { roomId }, search: { host: '1' } })
+    void navigate({ to: '/room/$roomId', params: { roomId }, search: { host: 1 } })
   }, [name, navigate])
 
   const goToRoom = useCallback(

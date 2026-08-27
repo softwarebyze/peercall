@@ -3,11 +3,11 @@ import { useState, useRef, useEffect } from 'react'
 import { Room } from '../components/Room'
 import styles from './index.module.css'
 
-type RoomSearch = { host?: '1' }
+type RoomSearch = { host?: 1 }
 
 function parseRoomSearch(search: Record<string, unknown>): RoomSearch {
-  // TanStack may parse ?host=1 as the number 1.
-  if (String(search.host ?? '') === '1') return { host: '1' }
+  // TanStack may parse ?host=1 as the number 1; JSON search may pass the string "1".
+  if (String(search.host ?? '') === '1') return { host: 1 }
   return {}
 }
 
@@ -22,7 +22,7 @@ export const Route = createFileRoute('/room/$roomId')({
 function RoomPage() {
   const { roomId } = Route.useParams()
   const search = Route.useSearch()
-  const isHost = search.host === '1'
+  const isHost = search.host === 1
 
   const [displayName, setDisplayName] = useState('')
   const [joined, setJoined] = useState(false)
