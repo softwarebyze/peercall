@@ -184,6 +184,7 @@
 .mutedBadge {
   font-size: 0.68rem;
   color: var(--danger);
+  display: inline-flex;
 }
 
 /* Media error banner */
@@ -266,10 +267,11 @@
 
 /* Controls */
 .controls {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0.5rem 0.75rem;
+  padding: 0.45rem 0.75rem;
   border-top: 1px solid var(--line);
   background: var(--bg);
   z-index: 10;
@@ -281,6 +283,73 @@
   display: flex;
   align-items: center;
   gap: 0.35rem;
+}
+
+.deviceReadout {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-family: var(--font-chrome);
+  font-size: 0.62rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+  max-width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  flex: 1 1 100%;
+  order: -1;
+}
+.deviceReadout span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.readoutDot {
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: var(--accent);
+  flex-shrink: 0;
+}
+
+.micBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+.micMeter {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 14px;
+}
+.micBar {
+  width: 3px;
+  height: 4px;
+  background: var(--line-strong);
+}
+.micBar:nth-child(2) { height: 7px; }
+.micBar:nth-child(3) { height: 10px; }
+.micBar:nth-child(4) { height: 12px; }
+.micBar:nth-child(5) { height: 14px; }
+.micBarOn {
+  background: var(--accent);
+}
+
+.ctrlText {
+  font-size: 0.68rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.endTitle {
+  margin: 0;
+  letter-spacing: -0.03em;
+}
+.endActions {
+  display: flex;
+  gap: 0.5rem;
 }
 
 .btnOff {
@@ -304,20 +373,43 @@
 
 .devicePanel {
   position: absolute;
-  bottom: 3.5rem;
-  left: 1rem;
+  bottom: calc(100% + 0.4rem);
+  left: 0.5rem;
   background: var(--bg-elev);
   border: 1px solid var(--line-strong);
-  padding: 0.6rem;
+  padding: 0.65rem;
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: 0.65rem;
   z-index: 20;
+  min-width: 220px;
+  max-height: 50vh;
+  overflow-y: auto;
 }
 .deviceGroup {
   display: flex;
   flex-direction: column;
-  gap: 0.25rem;
+  gap: 0.2rem;
+}
+.deviceGroupTitle {
+  font-family: var(--font-chrome);
+  font-size: 0.62rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  margin-bottom: 0.15rem;
+}
+.deviceChoice,
+.deviceSelected {
+  font-size: 0.75rem;
+  padding: 0.35rem 0.5rem;
+  text-align: left;
+  justify-content: flex-start;
+}
+.deviceSelected {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--accent-dim);
 }
 
 /* Chat panel */
@@ -405,6 +497,7 @@
     border-left: 1px solid var(--line);
     z-index: 30;
   }
+  .ctrlText { display: none; }
 }
 @media (max-width: 540px) {
   .grid {

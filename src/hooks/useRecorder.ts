@@ -10,7 +10,12 @@ export interface RecorderState {
 export function useRecorder(): RecorderState {
   const [recording, setRecording] = useState(false)
   const [duration, setDuration] = useState(0)
-  const outputRef = useRef<any>(null)
+  const outputRef = useRef<{
+    state: string
+    format: { mimeType: string }
+    target: { buffer: ArrayBuffer | null }
+    finalize: () => Promise<void>
+  } | null>(null)
   const rafRef = useRef(0)
   const durationIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const framesRef = useRef(0)
@@ -18,7 +23,7 @@ export function useRecorder(): RecorderState {
   const videoElRef = useRef<HTMLVideoElement | null>(null)
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const ctxRef = useRef<CanvasRenderingContext2D | null>(null)
-  const videoSourceRef = useRef<any>(null)
+  const videoSourceRef = useRef<{ add: (timestamp: number, duration: number) => void } | null>(null)
 
   const start = useCallback(async (stream: MediaStream) => {
     const {
@@ -42,7 +47,8 @@ export function useRecorder(): RecorderState {
     const videoSettings = videoTrack?.getSettings()
     canvas.width = videoSettings?.width ?? 1280
     canvas.height = videoSettings?.height ?? 720
-    const ctx = canvas.getContext('2d')!
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return
 
     canvasRef.current = canvas
     ctxRef.current = ctx
@@ -139,7 +145,7 @@ export function useRecorder(): RecorderState {
     const output = outputRef.current
     await output.finalize()
 
-    const buffer: ArrayBuffer | null = output.target.buffer
+    const buffer = output.target.buffer
     if (buffer) {
       const ext = output.format.mimeType?.includes('mp4') ? 'mp4' : 'webm'
       const blob = new Blob([buffer], { type: output.format.mimeType ?? 'video/mp4' })

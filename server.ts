@@ -40,7 +40,7 @@ const server = serve({
 
     // WebSocket upgrade for /signal
     if (url.pathname === "/signal") {
-      const ok = server.upgrade(req, { data: {} as any });
+      const ok = server.upgrade(req, { data: {} as Record<string, unknown> });
       if (ok) return;
       return new Response("upgrade failed", { status: 400 });
     }

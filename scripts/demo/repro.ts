@@ -95,7 +95,7 @@ function waitFor(fn: () => Promise<boolean>, timeoutMs: number, intervalMs = 200
 
 const overlayVisible = (page: Page) =>
   page
-    .getByText(/Connecting to signaling server|Waking up|Reconnecting to server/i)
+    .getByText(/Connecting to signaling|Waking the server|Signaling dropped|Waking up|Reconnecting/i)
     .first()
     .isVisible()
     .catch(() => false)

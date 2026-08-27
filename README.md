@@ -1,15 +1,15 @@
 # PeerCall
 
-Privacy-first peer-to-peer video calling. WebRTC mesh, local recording via MediaBunny, zero media through any server.
+Privacy-first peer-to-peer video calling. WebRTC mesh, local recording via MediaBunny. Media stays on the peer connection.
 
 ## Features
 
-- **P2P Mesh** — Up to 8 participants connected directly via WebRTC. No SFU, no relay server.
-- **Local Recording** — Record calls as MP4 directly to your device with MediaBunny.
-- **Zero Data Collection** — No accounts, no analytics, no tracking. Media never leaves your browser.
-- **In-Call Chat** — Ephemeral text messages via signaling server.
+- **P2P Mesh** — Up to 8 participants connected directly via WebRTC. No SFU, no media relay.
+- **Local Recording** — Record calls as MP4 on your device with MediaBunny.
+- **No Accounts** — Names live in localStorage. No analytics. Media never hits our disk.
+- **In-Call Chat** — Text is relayed through the signaling server and dies with the room.
 - **Screen Sharing** — Share your screen with other participants.
-- **Host Controls** — First participant becomes host. Host can end call for all.
+- **Host Controls** — First participant becomes host. Host can end the call for everyone.
 
 ## Quick Start
 
@@ -23,6 +23,29 @@ bun run dev:all
 This starts both the Vite dev server (port 3000) and the signaling server (port 8080).
 
 Open http://localhost:3000
+
+### Tests
+
+```bash
+bun test                 # unit tests (URL parse, devices, signaling)
+bun run typecheck
+```
+
+### End-to-end (and the recording time capsule)
+
+PeerCall's Playwright suite records **video of every test**. CI uploads those files as artifacts so you can watch how the product actually behaved at that commit.
+
+```bash
+bun run build
+bunx playwright install chromium
+bun run e2e
+```
+
+Recordings land in `e2e/recordings/<date>-<sha>/` (gitignored). On GitHub Actions, download the `peercall-e2e-<date>-<sha>` artifact (90-day retention).
+
+The suite uses fake camera/mic devices. It does not need a real camera.
+
+`bun run demo` is the optional reliability harness (`scripts/demo/repro.ts`): it kills the signaling server mid-call. It expects `bun run dev` on port 3000 and writes screenshots under `demo-artifacts/`. Prefer `bun run e2e` for product coverage.
 
 ### Production (local)
 
@@ -161,7 +184,7 @@ Client (React) ←→ Bun Server (SSR + WebSocket + Static)
 
 - **Single port**: SSR, static assets, WebSocket signaling, and config API all on one port
 - **No database**: Rooms are ephemeral, names stored in localStorage only
-- **WebRTC mesh**: Direct P2P connections between browsers
+- **WebRTC mesh**: Direct P2P connections between browsers (DTLS-SRTP on the media path)
 
 ## Tech Stack
 

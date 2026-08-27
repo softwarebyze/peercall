@@ -14,9 +14,21 @@ const DEFAULT_ICE_SERVERS: RTCConfiguration = {
 async function fetchIceConfig(): Promise<RTCConfiguration> {
   try {
     const res = await fetch('/config')
-    if (res.ok) return await res.json()
-  } catch {}
+    if (!res.ok) return DEFAULT_ICE_SERVERS
+    const data: unknown = await res.json()
+    const parsed = parseIceConfig(data)
+    if (parsed) return parsed
+  } catch {
+    // fall through to STUN-only defaults
+  }
   return DEFAULT_ICE_SERVERS
+}
+
+function parseIceConfig(data: unknown): RTCConfiguration | null {
+  if (typeof data !== 'object' || data === null || !('iceServers' in data)) return null
+  const servers = data.iceServers
+  if (!Array.isArray(servers) || servers.length === 0) return null
+  return { iceServers: servers }
 }
 
 export interface PeerStream {
@@ -40,9 +52,11 @@ export interface WebRTCState {
   shareScreen: () => Promise<void>
   stopScreen: () => void
   screenSharing: boolean
-  switchDevice: (kind: 'videoinput' | 'audioinput', deviceId: string) => Promise<void>
+  switchDevice: (args: { kind: 'videoinput' | 'audioinput'; deviceId: string }) => Promise<void>
   endCall: () => void
   mediaError: string | null
+  cameraDeviceId: string | null
+  micDeviceId: string | null
 }
 
 export function useWebRTC(opts: {
@@ -392,72 +406,82 @@ export function useWebRTC(opts: {
     try {
       const screen = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false })
       const screenTrack = screen.getVideoTracks()[0]
+      if (!screenTrack) return
       setScreenSharing(true)
 
       screenTrack.onended = () => {
-        stopScreen()
+        void stopScreen()
       }
 
-      // Replace video track in all PCs
       for (const [, pc] of pcsRef.current) {
         const sender = pc.getSenders().find((s) => s.track?.kind === 'video')
-        if (sender) sender.replaceTrack(screenTrack)
+        if (sender) void sender.replaceTrack(screenTrack)
       }
 
-      // Replace in local stream
       const oldVideo = localStreamRef.current?.getVideoTracks()[0]
-      localStreamRef.current?.removeTrack(oldVideo!)
-      localStreamRef.current?.addTrack(screenTrack)
-
-      // Re-render local
-      if (localStreamRef.current) setLocalStream(new MediaStream(localStreamRef.current.getTracks()))
-    } catch {}
+      if (localStreamRef.current && oldVideo) {
+        localStreamRef.current.removeTrack(oldVideo)
+        localStreamRef.current.addTrack(screenTrack)
+        setLocalStream(new MediaStream(localStreamRef.current.getTracks()))
+      }
+    } catch {
+      // user cancelled the picker
+    }
   }, [])
 
   const stopScreen = useCallback(async () => {
     try {
       const camStream = await navigator.mediaDevices.getUserMedia({ video: true })
       const camTrack = camStream.getVideoTracks()[0]
+      if (!camTrack) return
       setScreenSharing(false)
 
       for (const [, pc] of pcsRef.current) {
         const sender = pc.getSenders().find((s) => s.track?.kind === 'video')
-        if (sender) sender.replaceTrack(camTrack)
+        if (sender) void sender.replaceTrack(camTrack)
       }
 
       const oldScreen = localStreamRef.current?.getVideoTracks()[0]
       oldScreen?.stop()
-      localStreamRef.current?.removeTrack(oldScreen!)
-      localStreamRef.current?.addTrack(camTrack)
+      if (localStreamRef.current && oldScreen) {
+        localStreamRef.current.removeTrack(oldScreen)
+        localStreamRef.current.addTrack(camTrack)
+      }
       camTrack.enabled = cameraOnRef.current
 
       if (localStreamRef.current) setLocalStream(new MediaStream(localStreamRef.current.getTracks()))
-    } catch {}
+    } catch {
+      // camera may be gone
+    }
   }, [])
 
   const switchDevice = useCallback(
-    async (kind: 'videoinput' | 'audioinput', deviceId: string) => {
-      const trackKind = kind === 'videoinput' ? 'video' : 'audio'
+    async (args: { kind: 'videoinput' | 'audioinput'; deviceId: string }) => {
+      const trackKind = args.kind === 'videoinput' ? 'video' : 'audio'
       try {
         const stream = await navigator.mediaDevices.getUserMedia({
-          [trackKind === 'video' ? 'video' : 'audio']: { deviceId: { exact: deviceId } },
+          [trackKind === 'video' ? 'video' : 'audio']: { deviceId: { exact: args.deviceId } },
         })
         const newTrack = stream.getTracks()[0]
         if (!newTrack) return
 
         for (const [, pc] of pcsRef.current) {
           const sender = pc.getSenders().find((s) => s.track?.kind === trackKind)
-          if (sender) sender.replaceTrack(newTrack)
+          if (sender) void sender.replaceTrack(newTrack)
         }
 
         const oldTrack = localStreamRef.current?.getTracks().find((t) => t.kind === trackKind)
         oldTrack?.stop()
-        localStreamRef.current?.removeTrack(oldTrack!)
-        localStreamRef.current?.addTrack(newTrack)
+        if (localStreamRef.current && oldTrack) {
+          localStreamRef.current.removeTrack(oldTrack)
+          localStreamRef.current.addTrack(newTrack)
+        }
         newTrack.enabled = trackKind === 'video' ? cameraOnRef.current : micOnRef.current
 
         if (localStreamRef.current) setLocalStream(new MediaStream(localStreamRef.current.getTracks()))
-      } catch {}
+      } catch {
+        // device may have disappeared
+      }
     },
     []
   )
@@ -488,5 +512,7 @@ export function useWebRTC(opts: {
     switchDevice,
     endCall,
     mediaError,
+    cameraDeviceId: localStream?.getVideoTracks()[0]?.getSettings().deviceId ?? null,
+    micDeviceId: localStream?.getAudioTracks()[0]?.getSettings().deviceId ?? null,
   }
 }
