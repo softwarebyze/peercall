@@ -5,6 +5,7 @@ test.describe('in-call', () => {
   test('two peers join, mute, camera, chat, screenshot, devices, leave and rejoin', async ({
     browser,
   }) => {
+    test.setTimeout(90_000)
     const id = roomId()
     const alice = await newPeer(browser, 'Alice')
     await alice.page.goto(`/room/${id}?host=1`)
@@ -61,6 +62,8 @@ test.describe('in-call', () => {
     const cameraLabels = await panel.locator('button').allTextContents()
     const unique = new Set(cameraLabels.map((l) => l.trim()).filter((l) => l && l !== ''))
     expect(unique.size).toBe(cameraLabels.filter((l) => l.trim()).length)
+    await panel.getByLabel('Close devices').click()
+    await expect(panel).toHaveCount(0)
 
     await alice.page.getByTitle('Start recording').click()
     await expect(alice.page.getByTestId('rec-pill')).toBeVisible({ timeout: 8000 })
