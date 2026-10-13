@@ -1,5 +1,6 @@
 import { useRef, useEffect, useState } from 'react'
 import styles from './Room.module.css'
+import { IconMicOff } from './Icons'
 
 interface VideoTileProps {
   name: string
@@ -11,6 +12,7 @@ interface VideoTileProps {
   videoOff?: boolean
   /** Local-only: we know our own mic state directly. */
   micOff?: boolean
+  sinkId?: string | null
 }
 
 const stateLabel: Partial<Record<RTCPeerConnectionState, string>> = {
@@ -48,7 +50,7 @@ function useTrackMuted(stream: MediaStream | null, kind: 'video' | 'audio'): boo
   return muted
 }
 
-export function VideoTile({ name, stream, isLocal, isHost, connectionState, videoOff, micOff }: VideoTileProps) {
+export function VideoTile({ name, stream, isLocal, isHost, connectionState, videoOff, micOff, sinkId }: VideoTileProps) {
   const videoRef = useRef<HTMLVideoElement>(null)
   const streamRef = useRef<MediaStream | null>(null)
 
@@ -60,6 +62,12 @@ export function VideoTile({ name, stream, isLocal, isHost, connectionState, vide
     }
   }, [stream])
 
+  useEffect(() => {
+    const el = videoRef.current
+    if (!el || !sinkId || !('setSinkId' in el)) return
+    void el.setSinkId(sinkId).catch(() => {})
+  }, [sinkId, stream])
+
   const remoteVideoMuted = useTrackMuted(isLocal ? null : stream, 'video')
   const remoteAudioMuted = useTrackMuted(isLocal ? null : stream, 'audio')
 
@@ -69,7 +77,7 @@ export function VideoTile({ name, stream, isLocal, isHost, connectionState, vide
     !isLocal && connectionState && connectionState !== 'connected' && connectionState !== 'closed'
 
   return (
-    <div className={styles.tile}>
+    <div className={styles.tile} data-tile data-tile-name={isLocal ? `${name} (you)` : name}>
       <video
         ref={videoRef}
         className={styles.video}
@@ -102,7 +110,7 @@ export function VideoTile({ name, stream, isLocal, isHost, connectionState, vide
         <span>{isLocal ? `${name} (you)` : name}</span>
         {micMuted && stream && (
           <span className={styles.mutedBadge} title="Microphone muted">
-            🎙✕
+            <IconMicOff size={12} />
           </span>
         )}
         {isHost && <span className={styles.hostBadge}>HOST</span>}

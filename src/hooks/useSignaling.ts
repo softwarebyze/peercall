@@ -1,25 +1,13 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
+import { parseSignalMsg, type ChatEntry, type PeerInfo, type SignalMsg } from '../lib/signalMsg'
+
+export type { ChatEntry, PeerInfo, SignalMsg }
 
 function getSignalUrl(): string {
   if (typeof window === 'undefined') return ''
   const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
   return `${proto}//${window.location.host}/signal`
 }
-
-export type PeerInfo = { id: string; name: string; isHost: boolean }
-export type ChatEntry = { id: string; from: string; name: string; text: string; ts: number }
-
-export type SignalMsg =
-  | { t: 'joined'; payload: { id: string; roomId: string; isHost: boolean } }
-  | { t: 'room_state'; payload: { peers: PeerInfo[]; chat: ChatEntry[] } }
-  | { t: 'peer_joined'; payload: { id: string; name: string; isHost: boolean } }
-  | { t: 'peer_left'; payload: { id: string } }
-  | { t: 'offer'; payload: { from: string; data: RTCSessionDescriptionInit } }
-  | { t: 'answer'; payload: { from: string; data: RTCSessionDescriptionInit } }
-  | { t: 'ice'; payload: { from: string; data: RTCIceCandidateInit } }
-  | { t: 'chat'; payload: ChatEntry }
-  | { t: 'call_ended'; payload: { by: string } }
-  | { t: 'error'; payload: { message: string } }
 
 type SignalHandler = (msg: SignalMsg) => void
 
@@ -75,16 +63,22 @@ export function useSignaling(opts: {
       }
       ws.onmessage = (ev) => {
         if (closed) return
+        let parsedJson: unknown
         try {
-          const msg: SignalMsg = JSON.parse(ev.data)
-          if (msg.t === 'joined') {
-            everConnected = true
-            if (wakingTimer) clearTimeout(wakingTimer)
-            setMyId(msg.payload.id)
-            setStatus('connected')
-          }
-          handlerRef.current(msg)
-        } catch {}
+          parsedJson = JSON.parse(typeof ev.data === 'string' ? ev.data : String(ev.data))
+        } catch {
+          return
+        }
+        const parsed = parseSignalMsg(parsedJson)
+        if (parsed.kind === 'invalid') return
+        const msg = parsed.msg
+        if (msg.t === 'joined') {
+          everConnected = true
+          if (wakingTimer) clearTimeout(wakingTimer)
+          setMyId(msg.payload.id)
+          setStatus('connected')
+        }
+        handlerRef.current(msg)
       }
       ws.onclose = () => {
         if (closed) return

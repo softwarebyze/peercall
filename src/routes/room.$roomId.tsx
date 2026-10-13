@@ -1,8 +1,19 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { useState, useEffect } from 'react'
 import { Room } from '../components/Room'
+import { Lobby } from '../components/Lobby'
+import type { MediaHandoff } from '../hooks/useLocalMedia'
+
+type RoomSearch = { host?: 1 }
+
+function parseRoomSearch(search: Record<string, unknown>): RoomSearch {
+  // TanStack may parse ?host=1 as the number 1; JSON search may pass the string "1".
+  if (String(search.host ?? '') === '1') return { host: 1 }
+  return {}
+}
 
 export const Route = createFileRoute('/room/$roomId')({
+  validateSearch: parseRoomSearch,
   head: () => ({
     meta: [{ title: 'PeerCall — Join a call' }],
   }),
@@ -11,61 +22,40 @@ export const Route = createFileRoute('/room/$roomId')({
 
 function RoomPage() {
   const { roomId } = Route.useParams()
-  const search = Route.useSearch() as Record<string, unknown>
-  // TanStack Router parses ?host=1 as the number 1, so compare loosely.
-  const isHost = String(search.host ?? '') === '1'
+  const search = Route.useSearch()
+  const isHost = search.host === 1
 
   const [displayName, setDisplayName] = useState('')
-  const [joined, setJoined] = useState(false)
+  const [media, setMedia] = useState<MediaHandoff | null>(null)
   const [ready, setReady] = useState(false)
 
-  // Read localStorage after mount — reading it during render makes the server
-  // and client HTML disagree, and React leaves the mismatched attributes
-  // (like a disabled Join button) unpatched.
   useEffect(() => {
-    const stored = localStorage.getItem('peercall_name') ?? ''
-    setDisplayName(stored)
-    // Hosts arrive straight from the landing page where they just typed their
-    // name — skip the gate. Invitees always get to confirm/edit their name.
-    if (isHost && stored) setJoined(true)
+    setDisplayName(localStorage.getItem('peercall_name') ?? '')
     setReady(true)
-  }, [isHost])
+  }, [])
 
   if (!ready) return null
 
-  if (!joined) {
+  if (!media) {
     return (
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100vh', gap: '1rem' }}>
-        <h2 style={{ margin: 0, letterSpacing: '-0.03em' }}>Join call</h2>
-        <p className="dim">Enter your name to join room <span className="accent">{roomId}</span></p>
-        <input
-          type="text"
-          placeholder="Your name"
-          value={displayName}
-          onChange={(e) => setDisplayName(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && displayName.trim()) {
-              localStorage.setItem('peercall_name', displayName.trim())
-              setJoined(true)
-            }
-          }}
-          maxLength={30}
-          autoFocus
-          style={{ width: 260 }}
-        />
-        <button
-          className="btn-primary"
-          disabled={!displayName.trim()}
-          onClick={() => {
-            localStorage.setItem('peercall_name', displayName.trim())
-            setJoined(true)
-          }}
-        >
-          Join
-        </button>
-      </div>
+      <Lobby
+        roomId={roomId}
+        initialName={displayName}
+        onJoin={(args) => {
+          localStorage.setItem('peercall_name', args.name)
+          setDisplayName(args.name)
+          setMedia(args.media)
+        }}
+      />
     )
   }
 
-  return <Room roomId={roomId} displayName={displayName} isHost={isHost} />
+  return (
+    <Room
+      roomId={roomId}
+      displayName={displayName}
+      isHost={isHost}
+      initialMedia={media}
+    />
+  )
 }

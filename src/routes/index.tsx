@@ -1,31 +1,97 @@
-import { createFileRoute } from '@tanstack/react-router'
-import { useState, useCallback } from 'react'
+import { createFileRoute, useNavigate } from '@tanstack/react-router'
+import { useState, useCallback, useRef, useEffect } from 'react'
+import { QrScanner } from '../components/QrScanner'
+import { IconChat, IconLock, IconMesh, IconQr, IconRecord } from '../components/Icons'
+import { parseRoomJoin } from '../lib/roomUrl'
+import { generateRoomId } from '../lib/roomId'
 import styles from './index.module.css'
 
 export const Route = createFileRoute('/')({
   component: Landing,
 })
 
+function storeName(name: string) {
+  const trimmed = name.trim()
+  if (trimmed) localStorage.setItem('peercall_name', trimmed)
+  else localStorage.removeItem('peercall_name')
+  return trimmed
+}
+
 function Landing() {
+  const navigate = useNavigate()
+  const inputRef = useRef<HTMLInputElement>(null)
+  const joinRef = useRef<HTMLInputElement>(null)
   const [name, setName] = useState(() => {
     if (typeof window !== 'undefined') return localStorage.getItem('peercall_name') ?? ''
     return ''
   })
+  const [nameError, setNameError] = useState<string | null>(null)
+  const [joinInput, setJoinInput] = useState('')
+  const [joinError, setJoinError] = useState<string | null>(null)
+  const [showScanner, setShowScanner] = useState(false)
+
+  useEffect(() => {
+    const syncFromDom = () => {
+      if (inputRef.current) setName(inputRef.current.value)
+    }
+    window.addEventListener('pageshow', syncFromDom)
+    return () => window.removeEventListener('pageshow', syncFromDom)
+  }, [])
 
   const start = useCallback(() => {
-    const trimmed = name.trim()
-    if (!trimmed) return
-    localStorage.setItem('peercall_name', trimmed)
-    const roomId = crypto.randomUUID().slice(0, 12)
-    window.location.href = `/room/${roomId}?host=1`
-  }, [name])
+    const trimmed = storeName(name)
+    if (!trimmed) {
+      setNameError('Enter a name to start')
+      inputRef.current?.focus()
+      return
+    }
+    setNameError(null)
+    const roomId = generateRoomId()
+    void navigate({ to: '/room/$roomId', params: { roomId }, search: { host: 1 } })
+  }, [name, navigate])
+
+  const goToRoom = useCallback(
+    (roomId: string) => {
+      storeName(name)
+      setShowScanner(false)
+      void navigate({ to: '/room/$roomId', params: { roomId } })
+    },
+    [name, navigate],
+  )
+
+  const joinExisting = useCallback(() => {
+    if (!joinInput.trim()) {
+      setJoinError('Paste a room link or id.')
+      joinRef.current?.focus()
+      return
+    }
+    const parsed = parseRoomJoin({
+      text: joinInput,
+      origin: window.location.origin,
+      mode: 'paste',
+    })
+    switch (parsed.kind) {
+      case 'room':
+        setJoinError(null)
+        goToRoom(parsed.roomId)
+        return
+      case 'invalid':
+        setJoinError('Need a /room/ link or a room id.')
+        joinRef.current?.focus()
+        return
+      default: {
+        const _exhaustive: never = parsed
+        return _exhaustive
+      }
+    }
+  }, [joinInput, goToRoom])
 
   return (
     <div className={styles.page}>
       <div className={styles.hero}>
         <div className={styles.badge}>
           <div className="pulse-dot" />
-          <span>peer-to-peer media · open source</span>
+          <span>peer-to-peer · open source</span>
         </div>
 
         <h1 className={styles.title}>
@@ -35,54 +101,147 @@ function Landing() {
         </h1>
 
         <p className={styles.sub}>
-          PeerCall is a privacy-first video call that runs entirely in your browser.
-          WebRTC peer-to-peer — media never touches a server.
-          Local recording via MediaBunny — saved to your device, never the cloud.
+          Browser-to-browser video. Media stays on the WebRTC peer connection
+          (DTLS-SRTP). Chat rides the signaling server, then the room is gone.
+          Recordings save to your disk.
         </p>
 
-        <div className={styles.startRow}>
-          <input
-            className={styles.nameInput}
-            type="text"
-            placeholder="Your name"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && start()}
-            maxLength={30}
-            autoFocus
-          />
-          <button className="btn-primary" onClick={start} disabled={!name.trim()}>
-            Start a call — free, forever
-          </button>
+        <div className={styles.startBlock}>
+          <label className={styles.fieldLabel} htmlFor="display-name">
+            Name shown to others
+          </label>
+          <div className={styles.startRow}>
+            <input
+              id="display-name"
+              ref={inputRef}
+              className={`${styles.nameInput} ${nameError ? styles.nameInputInvalid : ''}`}
+              type="text"
+              placeholder="Name"
+              value={name}
+              onChange={(e) => {
+                setName(e.target.value)
+                if (nameError) setNameError(null)
+              }}
+              onKeyDown={(e) => e.key === 'Enter' && start()}
+              maxLength={30}
+              autoFocus
+              autoComplete="nickname"
+              aria-invalid={nameError ? true : undefined}
+              aria-describedby={nameError ? 'name-error' : undefined}
+            />
+            <button className="btn-primary" onClick={start} type="button">
+              Start call
+            </button>
+            <button
+              className={styles.scanBtn}
+              onClick={() => setShowScanner(true)}
+              title="Scan QR code to join"
+              type="button"
+              aria-label="Scan QR code to join"
+            >
+              <IconQr />
+            </button>
+          </div>
+          {nameError && (
+            <p className={styles.fieldError} id="name-error" data-testid="name-error" role="alert">
+              {nameError}
+            </p>
+          )}
         </div>
+
+        <form
+          className={styles.joinBlock}
+          onSubmit={(e) => {
+            e.preventDefault()
+            joinExisting()
+          }}
+        >
+          <label className={styles.fieldLabel} htmlFor="join-link">
+            Have an invite?
+          </label>
+          <div className={styles.startRow}>
+            <input
+              id="join-link"
+              ref={joinRef}
+              className={`${styles.nameInput} ${joinError ? styles.nameInputInvalid : ''}`}
+              type="text"
+              placeholder="Paste room link or id"
+              value={joinInput}
+              onChange={(e) => {
+                setJoinInput(e.target.value)
+                if (joinError) setJoinError(null)
+              }}
+              data-testid="join-link-input"
+              aria-invalid={joinError ? true : undefined}
+              aria-describedby={joinError ? 'join-error' : undefined}
+            />
+            <button className="btn-ghost" type="submit">
+              Join
+            </button>
+          </div>
+          {joinError && (
+            <p className={styles.fieldError} id="join-error" data-testid="join-error" role="alert">
+              {joinError}
+            </p>
+          )}
+        </form>
+
+        <div className={styles.productFrame} aria-hidden>
+          <div className={styles.productBar}>
+            <div className="pulse-dot" />
+            <span className="accent">PeerCall</span>
+            <span>·</span>
+            <span>brave-otter-pine</span>
+            <span style={{ marginLeft: 'auto' }}>Copy invite</span>
+          </div>
+          <div className={styles.productTiles}>
+            <div className={styles.productYou}>
+              <span className={styles.productAvatar}>Y</span>
+              <span>You</span>
+            </div>
+            <div className={styles.productWait}>Waiting for others</div>
+          </div>
+        </div>
+
+        {showScanner && (
+          <QrScanner onScan={goToRoom} onClose={() => setShowScanner(false)} />
+        )}
 
         <div className={styles.features}>
           <div className={styles.feature}>
-            <div className={styles.featureIcon}>🔗</div>
+            <div className={styles.featureMark}>
+              <IconMesh />
+            </div>
             <div>
-              <strong>P2P Mesh</strong>
-              <p>Up to 8 participants connected directly via WebRTC. No SFU, no relay server.</p>
+              <strong>P2P mesh</strong>
+              <p>Up to 8 browsers, connected directly. No SFU.</p>
             </div>
           </div>
           <div className={styles.feature}>
-            <div className={styles.featureIcon}>🎙</div>
+            <div className={styles.featureMark}>
+              <IconRecord />
+            </div>
             <div>
-              <strong>Local Recording</strong>
-              <p>Record calls as MP4/WebM directly to your device with MediaBunny. Zero upload.</p>
+              <strong>Local recording</strong>
+              <p>MP4 via MediaBunny, written to your machine. Nothing uploads.</p>
             </div>
           </div>
           <div className={styles.feature}>
-            <div className={styles.featureIcon}>🔒</div>
+            <div className={styles.featureMark}>
+              <IconLock />
+            </div>
             <div>
-              <strong>Zero Data Collection</strong>
-              <p>No accounts, no analytics, no tracking. Media never leaves your browser.</p>
+              <strong>No accounts</strong>
+              <p>A name in localStorage. No analytics. Media never hits our disk.</p>
             </div>
           </div>
           <div className={styles.feature}>
-            <div className={styles.featureIcon}>💬</div>
+            <div className={styles.featureMark}>
+              <IconChat />
+            </div>
             <div>
-              <strong>In-Call Chat</strong>
-              <p>Text messages relayed through the signaling server — ephemeral, never stored.</p>
+              <strong>In-call chat</strong>
+              <p>Signaling relays text. The room and the log die together.</p>
             </div>
           </div>
         </div>
@@ -91,7 +250,9 @@ function Landing() {
       <footer className={styles.footer}>
         <span className="dim">PeerCall v0.1</span>
         <span className="dim">·</span>
-        <a className={styles.footerLink} href="https://github.com/softwarebyze/peercall" target="_blank" rel="noopener">Source</a>
+        <a className={styles.footerLink} href="https://github.com/softwarebyze/peercall" target="_blank" rel="noopener">
+          Source
+        </a>
         <span className="dim">·</span>
         <span className="dim">MIT License</span>
       </footer>
