@@ -1,4 +1,4 @@
-import { useRef, useState, useCallback } from 'react'
+import { useRef, useState, useCallback, useEffect } from 'react'
 
 export type RecorderStart =
   | { kind: 'ok' }
@@ -37,6 +37,7 @@ export function useRecorder(): RecorderState {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const ctxRef = useRef<CanvasRenderingContext2D | null>(null)
   const videoSourceRef = useRef<VideoSource | null>(null)
+  const stopRef = useRef<() => Promise<RecorderStop>>(async () => ({ kind: 'idle' }))
 
   const resetLoop = () => {
     if (rafRef.current) {
@@ -205,6 +206,13 @@ export function useRecorder(): RecorderState {
     setDuration(0)
     return { kind: 'empty' }
   }, [])
+
+  stopRef.current = stop
+
+  // If the room unmounts while recording (e.g. the host ends the call for
+  // everyone), save the file instead of silently dropping it. The state
+  // updates inside stop() are no-ops once we are unmounting.
+  useEffect(() => () => void stopRef.current(), [])
 
   return { recording, duration, start, stop }
 }

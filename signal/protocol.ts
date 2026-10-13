@@ -101,6 +101,14 @@ export function broadcastRoomState(room: Room) {
   }
 }
 
+/** Locate the room a peer id currently belongs to, if any. */
+function findRoomOfPeer(peerId: PeerId): Room | undefined {
+  for (const room of rooms.values()) {
+    if (room.peers.has(peerId)) return room;
+  }
+  return undefined;
+}
+
 export function leaveRoom(room: Room, peer: Peer) {
   room.peers.delete(peer.id);
   for (const other of room.peers.values()) {
@@ -131,13 +139,19 @@ function parseWire(raw: string | Buffer): { t: string; payload: unknown } | null
   return { t: parsed.t, payload: parsed.payload };
 }
 
+// Display names and room codes are echoed to every peer, so cap them.
+const MAX_NAME_LENGTH = 40;
+const MAX_ROOM_ID_LENGTH = 64;
+
 function asJoin(payload: unknown): { roomId: string; name: string } | null {
   if (!isRecord(payload)) return null;
   const roomId = payload.roomId;
   const name = payload.name;
   if (typeof roomId !== "string" || typeof name !== "string") return null;
-  if (!roomId || !name) return null;
-  return { roomId, name };
+  const trimmedName = name.trim();
+  if (!roomId || !trimmedName) return null;
+  if (roomId.length > MAX_ROOM_ID_LENGTH || trimmedName.length > MAX_NAME_LENGTH) return null;
+  return { roomId, name: trimmedName.slice(0, MAX_NAME_LENGTH) };
 }
 
 function asRelay(payload: unknown): { target: string; data: unknown } | null {
@@ -165,6 +179,18 @@ export function handleMessage(ws: ServerWebSocket<unknown>, raw: string | Buffer
       return;
     }
     const { roomId, name } = join;
+
+    // A repeat join on the same socket must evict the previous membership,
+    // otherwise the old peer record is orphaned in its room forever.
+    const previousId = peerByWs.get(ws);
+    if (previousId) {
+      const previousRoom = findRoomOfPeer(previousId);
+      if (previousRoom) {
+        const previousPeer = previousRoom.peers.get(previousId);
+        if (previousPeer) leaveRoom(previousRoom, previousPeer);
+      }
+    }
+
     const id: PeerId = crypto.randomUUID();
     peerByWs.set(ws, id);
 
@@ -195,10 +221,7 @@ export function handleMessage(ws: ServerWebSocket<unknown>, raw: string | Buffer
     ws.send(pack("error", { message: "not joined" }));
     return;
   }
-  const roomId: RoomId | undefined = rooms.size
-    ? [...rooms.values()].find((r) => r.peers.has(peerId))?.id
-    : undefined;
-  const room = roomId ? rooms.get(roomId) : undefined;
+  const room = findRoomOfPeer(peerId);
   if (!room) {
     ws.send(pack("error", { message: "room not found" }));
     return;

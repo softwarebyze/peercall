@@ -36,6 +36,18 @@ const statusCopy = {
 
 export function Room(props: RoomProps) {
   const [view, setView] = useState<RoomView>({ kind: 'call', session: 0 })
+  // Remember the in-call mic/camera choices so rejoin doesn't silently
+  // unmute the user by falling back to the lobby's original state.
+  const [mediaPrefs, setMediaPrefs] = useState(() =>
+    props.initialMedia.kind === 'stream'
+      ? { cameraOn: props.initialMedia.cameraOn, micOn: props.initialMedia.micOn }
+      : null
+  )
+
+  const rejoinMedia: MediaHandoff =
+    mediaPrefs && props.initialMedia.kind === 'stream'
+      ? { ...props.initialMedia, ...mediaPrefs }
+      : props.initialMedia
 
   switch (view.kind) {
     case 'ended':
@@ -78,7 +90,8 @@ export function Room(props: RoomProps) {
           roomId={props.roomId}
           displayName={props.displayName}
           isHost={props.isHost}
-          initialMedia={props.initialMedia}
+          initialMedia={rejoinMedia}
+          onMediaPrefChange={setMediaPrefs}
           onLeave={() => setView({ kind: 'left' })}
           onEnded={() => setView({ kind: 'ended' })}
         />
@@ -95,10 +108,11 @@ function RoomSession(props: {
   displayName: string
   isHost: boolean
   initialMedia: MediaHandoff
+  onMediaPrefChange: (prefs: { cameraOn: boolean; micOn: boolean }) => void
   onLeave: () => void
   onEnded: () => void
 }) {
-  const { roomId, displayName, isHost, initialMedia, onLeave, onEnded } = props
+  const { roomId, displayName, isHost, initialMedia, onMediaPrefChange, onLeave, onEnded } = props
   const [signalMessages, setSignalMessages] = useState<SignalMsg[]>([])
   const [peers, setPeers] = useState<PeerInfo[]>([])
   const [chat, setChat] = useState<ChatEntry[]>([])
@@ -156,6 +170,12 @@ function RoomSession(props: {
   const micLevel = useMicLevel({ stream: rtc.localStream, active: rtc.micOn })
   const isHostHere = peers.find((p) => p.id === myId)?.isHost ?? false
   const inviteUrl = `${typeof window !== 'undefined' ? window.location.origin : ''}/room/${roomId}`
+
+  // Keep the parent's rejoin preferences in sync with what the user actually
+  // chose in this session.
+  useEffect(() => {
+    onMediaPrefChange({ cameraOn: rtc.cameraOn, micOn: rtc.micOn })
+  }, [rtc.cameraOn, rtc.micOn, onMediaPrefChange])
 
   const leaveCall = useCallback(() => {
     if (recorder.recording) void recorder.stop()

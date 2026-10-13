@@ -1,4 +1,5 @@
 import { useEffect } from 'react'
+import { createPortal } from 'react-dom'
 import type { DeviceEntry, DeviceList, MediaKind } from '../lib/devices'
 import { IconClose } from './Icons'
 import styles from './Room.module.css'
@@ -20,7 +21,9 @@ export function DeviceModal(args: {
     return () => window.removeEventListener('keydown', onKey)
   }, [args.onClose])
 
-  return (
+  // Portal to <body>: `.controls` sets z-index + position, which creates a
+  // stacking context that traps the overlay below `.topBar` (z-index 40).
+  return createPortal(
     <div className={styles.modalOverlay} onClick={args.onClose} role="presentation">
       <div
         className={styles.modal}
@@ -60,7 +63,8 @@ export function DeviceModal(args: {
           )}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   )
 }
 

@@ -93,8 +93,10 @@ export function useLocalMedia() {
 
   const handoff = useCallback(
     (args: { cameraOn: boolean; micOn: boolean; listen: boolean }): MediaHandoff => {
-      handedOff.current = true
+      // Nothing is handed to the room here, so the lobby still owns the
+      // stream and must stop it on unmount.
       if (args.listen || state.kind !== 'live') return { kind: 'listen' }
+      handedOff.current = true
       state.stream.getVideoTracks().forEach((t) => {
         t.enabled = args.cameraOn
       })

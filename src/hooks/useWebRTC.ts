@@ -372,12 +372,16 @@ export function useWebRTC(opts: {
     }
   }, [myId, initialMedia, acquireMedia, takeStream])
 
-  // Stop media only when the hook unmounts (leaving the room).
+  // Tear down peer connections and stop media when the hook unmounts.
+  // Closing the PCs matters: `call_ended` unmounts the room without going
+  // through endCall(), and a leaked RTCPeerConnection keeps the remote peer's
+  // connection alive until GC.
   useEffect(
     () => () => {
+      for (const [id] of pcsRef.current) cleanupPC(id)
       localStreamRef.current?.getTracks().forEach((t) => t.stop())
     },
-    []
+    [cleanupPC]
   )
 
   // Keep tracks in sync with the current local stream on existing PCs
