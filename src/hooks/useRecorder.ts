@@ -173,13 +173,16 @@ export function useRecorder(): RecorderState {
       setDuration(0)
       return { kind: 'idle' }
     }
+    // Claim the output before awaiting finalize(): the unmount cleanup calls
+    // stop() again, and that second call must see no output rather than
+    // finalize (and drain) the same output twice.
+    outputRef.current = null
 
     resetLoop()
 
     try {
       await output.finalize()
     } catch {
-      outputRef.current = null
       setRecording(false)
       setDuration(0)
       return { kind: 'empty' }
@@ -195,13 +198,11 @@ export function useRecorder(): RecorderState {
       a.download = `peercall-recording-${new Date().toISOString().slice(0, 19).replace(/:/g, '-')}.${ext}`
       a.click()
       URL.revokeObjectURL(url)
-      outputRef.current = null
       setRecording(false)
       setDuration(0)
       return { kind: 'saved' }
     }
 
-    outputRef.current = null
     setRecording(false)
     setDuration(0)
     return { kind: 'empty' }

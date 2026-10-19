@@ -76,6 +76,43 @@ describe('handleMessage join', () => {
 
     expect(stayer.sent.some((m) => m.t === 'peer_left')).toBe(true)
   })
+
+  test('a join the destination refuses keeps the socket in its current room', () => {
+    const room = fakeWs()
+    join(room, 'home', 'AtHome')
+    for (let i = 0; i < 8; i++) join(fakeWs(), 'full', `P${i}`)
+
+    const mover = fakeWs()
+    join(mover, 'home', 'Mover')
+    room.sent.length = 0
+    mover.sent.length = 0
+
+    join(mover, 'full', 'Mover')
+
+    // The rejected join must not evict the mover from 'home' (a peer_left would
+    // leave the stayer rendering someone who is still there) ...
+    expect(mover.sent.some((m) => m.t === 'error')).toBe(true)
+    expect(room.sent.some((m) => m.t === 'peer_left')).toBe(false)
+    expect(rooms.get('home')?.peers.size).toBe(2)
+    expect(rooms.get('full')?.peers.size).toBe(8)
+
+    // ... and the socket must still be able to talk in the room it kept.
+    mover.sent.length = 0
+    handleMessage(mover, JSON.stringify({ t: 'chat', payload: { text: 'still here' } }))
+    expect(rooms.get('home')?.chat.at(-1)?.text).toBe('still here')
+  })
+
+  test('a same-room re-join is allowed while the room is at capacity', () => {
+    const ws = fakeWs()
+    join(ws, 'packed', 'A')
+    for (let i = 1; i < 8; i++) join(fakeWs(), 'packed', `P${i}`)
+    expect(rooms.get('packed')?.peers.size).toBe(8)
+
+    join(ws, 'packed', 'A')
+
+    expect(ws.sent.some((m) => m.t === 'error')).toBe(false)
+    expect(rooms.get('packed')?.peers.size).toBe(8)
+  })
 })
 
 describe('handleMessage screen_share', () => {

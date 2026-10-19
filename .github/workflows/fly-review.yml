@@ -78,7 +78,7 @@ jobs:
           marker='<!-- review-app-url -->'
           body="$marker"$'\n'"Review app deployed: $URL"
           id="$(gh api "repos/$GITHUB_REPOSITORY/issues/$PR/comments" --paginate \
-            --jq '.[] | select(.body | contains("<!-- review-app-url -->")) | .id' \
+            --jq '.[] | select(.user.login == "github-actions[bot]" and (.body | contains("<!-- review-app-url -->"))) | .id' \
             | head -n 1 || true)"
           if [ -n "$id" ]; then
             gh api -X PATCH "repos/$GITHUB_REPOSITORY/issues/comments/$id" -f body="$body" >/dev/null

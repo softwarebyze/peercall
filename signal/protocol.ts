@@ -187,19 +187,30 @@ export function handleMessage(ws: ServerWebSocket<unknown>, raw: string | Buffer
     }
     const { roomId, name } = join;
 
+    const previousId = peerByWs.get(ws);
+    const previousRoom = previousId ? findRoomOfPeer(previousId) : undefined;
+    // A re-join that lands back in the same room replaces our own record, so it
+    // must not count against the cap.
+    const rejoiningSameRoom = previousRoom?.id === roomId;
+
+    // Capacity is checked BEFORE eviction: a join that the destination refuses
+    // must not strip the socket of the room it is already in, or the client
+    // believes it is still connected while the server has dropped it.
+    const destination = rooms.get(roomId);
+    if (!rejoiningSameRoom && destination && destination.peers.size >= 8) {
+      ws.send(pack("error", { message: "room full (max 8)" }));
+      return;
+    }
+
     // A repeat join on the same socket must evict the previous membership,
     // otherwise the old peer record is orphaned in its room forever.
-    const previousId = peerByWs.get(ws);
     if (previousId) {
-      const previousRoom = findRoomOfPeer(previousId);
       if (previousRoom) {
         const previousPeer = previousRoom.peers.get(previousId);
         if (previousPeer) leaveRoom(previousRoom, previousPeer);
       }
+      peerByWs.delete(ws);
     }
-
-    const id: PeerId = crypto.randomUUID();
-    peerByWs.set(ws, id);
 
     let room = rooms.get(roomId);
     if (!room) {
@@ -210,6 +221,8 @@ export function handleMessage(ws: ServerWebSocket<unknown>, raw: string | Buffer
       ws.send(pack("error", { message: "room full (max 8)" }));
       return;
     }
+    const id: PeerId = crypto.randomUUID();
+    peerByWs.set(ws, id);
     const peer: Peer = { id, name, isHost: false, sharing: false, ws, room: roomId };
     room.peers.set(id, peer);
     if (room.hostId === null) room.hostId = id;

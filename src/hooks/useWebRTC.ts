@@ -476,6 +476,15 @@ export function useWebRTC(opts: {
       const screen = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false })
       const screenTrack = screen.getVideoTracks()[0]
       if (!screenTrack) return
+      // The screen only reaches peers by replacing our video sender's track.
+      // In audio-only / listen-only mode there is no video sender (the video
+      // transceiver is recvonly), so the track would never arrive — and
+      // signaling a share would spotlight an avatar on everyone's stage. Until
+      // send-side renegotiation exists, refuse the share instead of lying.
+      if (!localStreamRef.current?.getVideoTracks()[0]) {
+        screen.getTracks().forEach((t) => t.stop())
+        return
+      }
       setScreenSharing(true)
       // Tell peers we are presenting so they can spotlight the shared screen
       // instead of leaving it in a one-third grid cell.
@@ -502,29 +511,47 @@ export function useWebRTC(opts: {
   }, [sendSignal])
 
   const stopScreen = useCallback(async () => {
+    // Drop the sharing flag up front. If the camera cannot be reacquired —
+    // unplugged, permission revoked, or the browser's own "Stop sharing"
+    // button — every peer must still fall out of the spotlight on a dead
+    // screen, so the signal can never depend on that fetch succeeding.
+    setScreenSharing(false)
+    sendSignal('screen_share', { sharing: false })
+
+    const local = localStreamRef.current
+    const screenTrack = local?.getVideoTracks()[0]
+    const dropScreenTrack = () => {
+      screenTrack?.stop()
+      if (local && screenTrack) {
+        local.removeTrack(screenTrack)
+        setLocalStream(new MediaStream(local.getTracks()))
+      }
+    }
+
     try {
       const camStream = await navigator.mediaDevices.getUserMedia({ video: true })
       const camTrack = camStream.getVideoTracks()[0]
-      if (!camTrack) return
-      setScreenSharing(false)
-      sendSignal('screen_share', { sharing: false })
+      if (!camTrack) {
+        dropScreenTrack()
+        return
+      }
 
       for (const [, pc] of pcsRef.current) {
         const sender = pc.getSenders().find((s) => s.track?.kind === 'video')
         if (sender) void sender.replaceTrack(camTrack)
       }
 
-      const oldScreen = localStreamRef.current?.getVideoTracks()[0]
-      oldScreen?.stop()
-      if (localStreamRef.current && oldScreen) {
-        localStreamRef.current.removeTrack(oldScreen)
-        localStreamRef.current.addTrack(camTrack)
-      }
       camTrack.enabled = cameraOnRef.current
-
-      if (localStreamRef.current) setLocalStream(new MediaStream(localStreamRef.current.getTracks()))
+      if (local && screenTrack) {
+        local.removeTrack(screenTrack)
+        local.addTrack(camTrack)
+        setLocalStream(new MediaStream(local.getTracks()))
+      }
+      screenTrack?.stop()
     } catch {
-      // camera may be gone
+      // Camera may be gone; the share is already stopped, so keep the call up
+      // without video rather than leaving the screen track live in a sender.
+      dropScreenTrack()
     }
   }, [sendSignal])
 
