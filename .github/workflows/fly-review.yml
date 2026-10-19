@@ -11,24 +11,26 @@ on:
 # Optional REVIEW_APP_ADMIN_TOKEN (Administration: write) lets the cleanup step
 # delete the pr-<n> environment on close. Without it the delete is best-effort.
 #
-# `secrets` is not a valid context in a job-level `if`, so the token check
-# happens in a step that exports an output the later steps gate on.
+# A job-level `if` cannot read `secrets`, so the `preflight` job decides whether
+# the token is configured and the deploy job gates on its output. This matters:
+# a job that declares `environment:` creates a GitHub Deployment even when every
+# step is skipped, which left the PR showing a pr-<n> "deployment" with no link.
+# Gating the whole job means no token => no phantom deployment, no dead link.
 permissions:
   contents: read
   deployments: write
+  # To post the review-app link as a PR comment (upserted in place).
+  pull-requests: write
 
 env:
   FLY_REGION: iad
   FLY_ORG: personal
 
 jobs:
-  review_app:
+  preflight:
     runs-on: ubuntu-latest
-    concurrency:
-      group: pr-${{ github.event.number }}
-    environment:
-      name: pr-${{ github.event.number }}
-      url: ${{ steps.deploy.outputs.url }}
+    outputs:
+      deploy: ${{ steps.fly-token.outputs.set }}
     steps:
       - name: Check for a Fly token
         id: fly-token
@@ -42,24 +44,55 @@ jobs:
             echo "::notice::FLY_API_TOKEN is not configured; skipping review app deploy."
           fi
 
+  review_app:
+    needs: preflight
+    if: needs.preflight.outputs.deploy == 'true'
+    runs-on: ubuntu-latest
+    concurrency:
+      group: pr-${{ github.event.number }}
+    environment:
+      name: pr-${{ github.event.number }}
+      url: ${{ steps.deploy.outputs.url }}
+    steps:
       - uses: actions/checkout@v4
-        if: steps.fly-token.outputs.set == 'true'
 
       - name: Deploy PR app to Fly.io
         id: deploy
-        if: steps.fly-token.outputs.set == 'true'
         uses: superfly/fly-pr-review-apps@1.5.0
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
 
+      # The environment `url` above powers the Deployments "View deployment"
+      # button; this comment makes the link obvious on the PR itself. It is
+      # upserted via a hidden marker so re-pushes update one comment instead of
+      # piling up a new one each time.
+      - name: Comment the review app URL on the PR
+        if: ${{ github.event.action != 'closed' && steps.deploy.outputs.url != '' }}
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR: ${{ github.event.number }}
+          URL: ${{ steps.deploy.outputs.url }}
+        run: |
+          set -eu
+          marker='<!-- review-app-url -->'
+          body="$marker"$'\n'"Review app deployed: $URL"
+          id="$(gh api "repos/$GITHUB_REPOSITORY/issues/$PR/comments" --paginate \
+            --jq '.[] | select(.body | contains("<!-- review-app-url -->")) | .id' \
+            | head -n 1 || true)"
+          if [ -n "$id" ]; then
+            gh api -X PATCH "repos/$GITHUB_REPOSITORY/issues/comments/$id" -f body="$body" >/dev/null
+          else
+            gh api "repos/$GITHUB_REPOSITORY/issues/$PR/comments" -f body="$body" >/dev/null
+          fi
+
       - name: Clean up GitHub environment
-        # Only relevant when we actually deployed, and best-effort: deleting a
-        # GitHub environment needs repository Administration write, which
-        # GITHUB_TOKEN cannot be granted. Supply a scoped token via the
-        # REVIEW_APP_ADMIN_TOKEN secret to actually remove the environment;
+        # Best-effort: deleting a GitHub environment needs repository
+        # Administration write, which GITHUB_TOKEN cannot be granted. Supply a
+        # scoped token via REVIEW_APP_ADMIN_TOKEN to actually remove it;
         # otherwise the delete is skipped/ignored so it can never red-X a
         # closed PR.
-        if: ${{ always() && github.event.action == 'closed' && steps.fly-token.outputs.set == 'true' }}
+        if: ${{ always() && github.event.action == 'closed' }}
         continue-on-error: true
         uses: strumwolf/delete-deployment-environment@v2
         with:
