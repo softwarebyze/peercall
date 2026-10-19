@@ -41,6 +41,11 @@ export default defineConfig({
         '--use-fake-ui-for-media-stream',
         '--use-fake-device-for-media-stream',
         '--autoplay-policy=no-user-gesture-required',
+        // Let getDisplayMedia auto-pick a source so the screen-share layout can
+        // be exercised headlessly (the fake picker otherwise has nothing to
+        // choose from).
+        '--auto-select-desktop-capture-source=Entire screen',
+        '--enable-usermedia-screen-capturing',
       ],
     },
   },

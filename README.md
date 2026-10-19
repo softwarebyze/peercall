@@ -8,7 +8,8 @@ Privacy-first peer-to-peer video calling. WebRTC mesh, local recording via Media
 - **Local Recording** — Record calls as MP4 on your device with MediaBunny.
 - **No Accounts** — Names live in localStorage. No analytics. Media never hits our disk.
 - **In-Call Chat** — Text is relayed through the signaling server and dies with the room.
-- **Screen Sharing** — Share your screen with other participants.
+- **Screen Sharing** — Share your screen; it takes the stage for everyone, with the rest of the call in a filmstrip.
+- **Adaptive Layout** — Tiles size to the window instead of counting participants, and you can focus (pin) anyone to spotlight them.
 - **Host Controls** — First participant becomes host. Host can end the call for everyone.
 
 ## Quick Start

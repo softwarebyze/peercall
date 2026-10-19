@@ -9,6 +9,7 @@ export interface Peer {
   id: PeerId;
   name: string;
   isHost: boolean;
+  sharing: boolean;
   ws: ServerWebSocket<unknown>;
   room: RoomId;
 }
@@ -95,6 +96,7 @@ export function broadcastRoomState(room: Room) {
     id: p.id,
     name: p.name,
     isHost: p.id === room.hostId,
+    sharing: p.sharing,
   }));
   for (const p of room.peers.values()) {
     p.ws.send(pack("room_state", { peers, chat: room.chat }));
@@ -164,6 +166,11 @@ function asChat(payload: unknown): { text: string } | null {
   return { text: payload.text };
 }
 
+function asSharing(payload: unknown): { sharing: boolean } | null {
+  if (!isRecord(payload) || typeof payload.sharing !== "boolean") return null;
+  return { sharing: payload.sharing };
+}
+
 export function handleMessage(ws: ServerWebSocket<unknown>, raw: string | Buffer) {
   const msg = parseWire(raw);
   if (!msg) {
@@ -203,14 +210,14 @@ export function handleMessage(ws: ServerWebSocket<unknown>, raw: string | Buffer
       ws.send(pack("error", { message: "room full (max 8)" }));
       return;
     }
-    const peer: Peer = { id, name, isHost: false, ws, room: roomId };
+    const peer: Peer = { id, name, isHost: false, sharing: false, ws, room: roomId };
     room.peers.set(id, peer);
     if (room.hostId === null) room.hostId = id;
 
     ws.send(pack("joined", { id, roomId, isHost: room.hostId === id }));
     for (const other of room.peers.values()) {
       if (other.id === id) continue;
-      other.ws.send(pack("peer_joined", { id, name, isHost: false }));
+      other.ws.send(pack("peer_joined", { id, name, isHost: false, sharing: false }));
     }
     broadcastRoomState(room);
     return;
@@ -251,6 +258,16 @@ export function handleMessage(ws: ServerWebSocket<unknown>, raw: string | Buffer
     for (const p of room.peers.values()) {
       p.ws.send(pack("chat", entry));
     }
+    return;
+  }
+
+  if (t === "screen_share") {
+    const sharing = asSharing(payload);
+    if (!sharing) return;
+    const peer = room.peers.get(peerId);
+    if (!peer || peer.sharing === sharing.sharing) return;
+    peer.sharing = sharing.sharing;
+    broadcastRoomState(room);
     return;
   }
 

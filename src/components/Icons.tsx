@@ -219,3 +219,19 @@ export function IconSpeaker(props: IconProps) {
     </svg>
   )
 }
+
+export function IconFocus(props: IconProps) {
+  return (
+    <svg {...svgProps(props)}>
+      <path d="M4 9V5.5A1.5 1.5 0 0 1 5.5 4H9M15 4h3.5A1.5 1.5 0 0 1 20 5.5V9M20 15v3.5a1.5 1.5 0 0 1-1.5 1.5H15M9 20H5.5A1.5 1.5 0 0 1 4 18.5V15" />
+    </svg>
+  )
+}
+
+export function IconUnfocus(props: IconProps) {
+  return (
+    <svg {...svgProps(props)}>
+      <path d="M9 4v3.5A1.5 1.5 0 0 1 7.5 9H4M20 9h-3.5A1.5 1.5 0 0 1 15 7.5V4M15 20v-3.5a1.5 1.5 0 0 1 1.5-1.5H20M4 15h3.5A1.5 1.5 0 0 1 9 16.5V20" />
+    </svg>
+  )
+}

@@ -477,6 +477,9 @@ export function useWebRTC(opts: {
       const screenTrack = screen.getVideoTracks()[0]
       if (!screenTrack) return
       setScreenSharing(true)
+      // Tell peers we are presenting so they can spotlight the shared screen
+      // instead of leaving it in a one-third grid cell.
+      sendSignal('screen_share', { sharing: true })
 
       screenTrack.onended = () => {
         void stopScreen()
@@ -496,7 +499,7 @@ export function useWebRTC(opts: {
     } catch {
       // user cancelled the picker
     }
-  }, [])
+  }, [sendSignal])
 
   const stopScreen = useCallback(async () => {
     try {
@@ -504,6 +507,7 @@ export function useWebRTC(opts: {
       const camTrack = camStream.getVideoTracks()[0]
       if (!camTrack) return
       setScreenSharing(false)
+      sendSignal('screen_share', { sharing: false })
 
       for (const [, pc] of pcsRef.current) {
         const sender = pc.getSenders().find((s) => s.track?.kind === 'video')
@@ -522,7 +526,7 @@ export function useWebRTC(opts: {
     } catch {
       // camera may be gone
     }
-  }, [])
+  }, [sendSignal])
 
   const switchDevice = useCallback(
     async (args: { kind: 'videoinput' | 'audioinput'; deviceId: string }) => {

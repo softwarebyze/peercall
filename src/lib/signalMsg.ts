@@ -1,4 +1,4 @@
-export type PeerInfo = { id: string; name: string; isHost: boolean }
+export type PeerInfo = { id: string; name: string; isHost: boolean; sharing: boolean }
 export type ChatEntry = { id: string; from: string; name: string; text: string; ts: number }
 
 export type SignalMsg =
@@ -35,7 +35,10 @@ function parsePeerInfo(value: unknown): PeerInfo | null {
   const name = asString(value.name)
   const isHost = asBoolean(value.isHost)
   if (id === null || name === null || isHost === null) return null
-  return { id, name, isHost }
+  // `sharing` is newer than the rest of the payload; default it so a client can
+  // still parse a peer from an older server it is rolling past.
+  const sharing = asBoolean(value.sharing) ?? false
+  return { id, name, isHost, sharing }
 }
 
 function parseChatEntry(value: unknown): ChatEntry | null {

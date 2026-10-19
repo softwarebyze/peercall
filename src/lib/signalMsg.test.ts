@@ -25,4 +25,29 @@ describe('parseSignalMsg', () => {
     expect(parseSignalMsg(null)).toEqual({ kind: 'invalid' })
     expect(parseSignalMsg('joined')).toEqual({ kind: 'invalid' })
   })
+
+  test('parses a peer sharing flag from room state', () => {
+    const parsed = parseSignalMsg({
+      t: 'room_state',
+      payload: { peers: [{ id: 'p1', name: 'A', isHost: true, sharing: true }], chat: [] },
+    })
+    expect(parsed).toEqual({
+      kind: 'ok',
+      msg: {
+        t: 'room_state',
+        payload: { peers: [{ id: 'p1', name: 'A', isHost: true, sharing: true }], chat: [] },
+      },
+    })
+  })
+
+  test('defaults a missing sharing flag to false for older servers', () => {
+    const parsed = parseSignalMsg({
+      t: 'peer_joined',
+      payload: { id: 'p2', name: 'B', isHost: false },
+    })
+    expect(parsed).toEqual({
+      kind: 'ok',
+      msg: { t: 'peer_joined', payload: { id: 'p2', name: 'B', isHost: false, sharing: false } },
+    })
+  })
 })

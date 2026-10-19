@@ -78,6 +78,61 @@ describe('handleMessage join', () => {
   })
 })
 
+describe('handleMessage screen_share', () => {
+  function sharingOf(ws: ReturnType<typeof fakeWs>, name: string): boolean | undefined {
+    const state = ws.sent.filter((m) => m.t === 'room_state').at(-1)
+    const peers = state?.payload.peers as { name: string; sharing: boolean }[] | undefined
+    return peers?.find((p) => p.name === name)?.sharing
+  }
+
+  test('marks the sharer and rebroadcasts room state', () => {
+    const ws = fakeWs()
+    join(ws, 's1', 'A')
+    ws.sent.length = 0
+
+    handleMessage(ws, JSON.stringify({ t: 'screen_share', payload: { sharing: true } }))
+
+    expect(sharingOf(ws, 'A')).toBe(true)
+  })
+
+  test('a late joiner sees the existing sharer', () => {
+    const sharer = fakeWs()
+    join(sharer, 's2', 'Sharer')
+    handleMessage(sharer, JSON.stringify({ t: 'screen_share', payload: { sharing: true } }))
+
+    const late = fakeWs()
+    join(late, 's2', 'Late')
+
+    expect(sharingOf(late, 'Sharer')).toBe(true)
+    expect(sharingOf(late, 'Late')).toBe(false)
+  })
+
+  test('stops sharing when the flag flips back', () => {
+    const ws = fakeWs()
+    join(ws, 's3', 'A')
+    handleMessage(ws, JSON.stringify({ t: 'screen_share', payload: { sharing: true } }))
+    handleMessage(ws, JSON.stringify({ t: 'screen_share', payload: { sharing: false } }))
+
+    expect(sharingOf(ws, 'A')).toBe(false)
+  })
+
+  test('ignores a malformed sharing flag', () => {
+    const ws = fakeWs()
+    join(ws, 's4', 'A')
+    ws.sent.length = 0
+
+    handleMessage(ws, JSON.stringify({ t: 'screen_share', payload: { sharing: 'yes' } }))
+
+    expect(ws.sent.some((m) => m.t === 'room_state')).toBe(false)
+  })
+
+  test('ignores screen_share before joining', () => {
+    const ws = fakeWs()
+    handleMessage(ws, JSON.stringify({ t: 'screen_share', payload: { sharing: true } }))
+    expect(ws.sent.some((m) => m.t === 'error' && m.payload.message === 'not joined')).toBe(true)
+  })
+})
+
 describe('handleMessage chat', () => {
   test('caps message text at 2000 characters', () => {
     const ws = fakeWs()

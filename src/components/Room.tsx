@@ -5,6 +5,7 @@ import { useWebRTC } from '../hooks/useWebRTC'
 import { useRecorder } from '../hooks/useRecorder'
 import { useMicLevel } from '../hooks/useMicLevel'
 import { useMediaDevices } from '../hooks/useMediaDevices'
+import { useElementSize } from '../hooks/useElementSize'
 import type { MediaHandoff } from '../hooks/useLocalMedia'
 import { VideoTile } from './VideoTile'
 import { ControlsBar } from './ControlsBar'
@@ -12,8 +13,21 @@ import { ChatPanel } from './ChatPanel'
 import { InviteCard } from './InviteCard'
 import { IconCopy, IconCheck, IconPeople, IconWarn } from './Icons'
 import { captureCallScreenshot } from '../lib/screenshot'
+import { resolveLayout, type LayoutTile } from '../lib/layout'
 import type { MediaKind } from '../lib/devices'
 import styles from './Room.module.css'
+
+type TileVariant = 'grid' | 'strip' | 'stage'
+
+interface CallPeer {
+  id: string
+  name: string
+  isHost: boolean
+  sharing: boolean
+  stream: MediaStream | null
+  isLocal: boolean
+  connectionState: RTCPeerConnectionState
+}
 
 interface RoomProps {
   roomId: string
@@ -124,7 +138,16 @@ function RoomSession(props: {
   const [shotError, setShotError] = useState<string | null>(null)
   const [toast, setToast] = useState<string | null>(null)
   const [endConfirm, setEndConfirm] = useState(false)
+  const [pinnedId, setPinnedId] = useState<string | null>(null)
   const gridRef = useRef<HTMLDivElement>(null)
+  const [setLayoutNode, layoutSize] = useElementSize<HTMLDivElement>()
+  const layoutRef = useCallback(
+    (node: HTMLDivElement | null) => {
+      gridRef.current = node
+      setLayoutNode(node)
+    },
+    [setLayoutNode],
+  )
 
   useEffect(() => {
     if (!toast) return
@@ -199,23 +222,25 @@ function RoomSession(props: {
     })
   }, [inviteUrl])
 
-  const allPeers = useMemo(() => {
-    const me = {
+  const allPeers = useMemo<CallPeer[]>(() => {
+    const me: CallPeer = {
       id: myId ?? 'me',
       name: displayName,
       isHost: isHostHere,
+      sharing: rtc.screenSharing,
       stream: rtc.localStream,
       isLocal: true,
-      connectionState: 'connected' as RTCPeerConnectionState,
+      connectionState: 'connected',
     }
     const remotes = peers
       .filter((p) => p.id !== myId)
-      .map((p) => {
+      .map((p): CallPeer => {
         const media = rtc.remoteStreams.find((r) => r.id === p.id)
         return {
           id: p.id,
           name: p.name,
           isHost: p.isHost,
+          sharing: p.sharing,
           stream: media?.stream ?? null,
           isLocal: false,
           connectionState:
@@ -223,9 +248,58 @@ function RoomSession(props: {
         }
       })
     return [me, ...remotes]
-  }, [myId, displayName, isHostHere, peers, rtc.localStream, rtc.remoteStreams, rtc.connectionStates])
+  }, [
+    myId,
+    displayName,
+    isHostHere,
+    peers,
+    rtc.screenSharing,
+    rtc.localStream,
+    rtc.remoteStreams,
+    rtc.connectionStates,
+  ])
 
   const alone = allPeers.length === 1
+
+  // Drop a focus on someone who left, so the layout falls back to the grid.
+  useEffect(() => {
+    if (pinnedId !== null && !allPeers.some((p) => p.id === pinnedId)) setPinnedId(null)
+  }, [allPeers, pinnedId])
+
+  const aspect = layoutSize.height > 0 ? layoutSize.width / layoutSize.height : 16 / 9
+  const layout = resolveLayout({
+    tiles: allPeers.map((p): LayoutTile => ({ id: p.id, sharing: p.sharing, isLocal: p.isLocal })),
+    pinnedId,
+    aspect,
+  })
+  const spotlight = layout.mode === 'spotlight' ? layout : null
+  const gridLayout = layout.mode === 'grid' ? layout : null
+  const stageTile = spotlight ? (allPeers.find((p) => p.id === spotlight.stageId) ?? null) : null
+  const strip = spotlight ? allPeers.filter((p) => p.id !== spotlight.stageId) : []
+
+  const renderTile = (p: CallPeer, variant: TileVariant) => (
+    <VideoTile
+      key={p.id}
+      name={p.name}
+      stream={p.stream}
+      isLocal={p.isLocal}
+      isHost={p.isHost}
+      connectionState={p.connectionState}
+      videoOff={p.isLocal ? !rtc.cameraOn : undefined}
+      micOff={p.isLocal ? !rtc.micOn : undefined}
+      sinkId={speakerDeviceId}
+      variant={variant}
+      sharing={p.sharing}
+      focused={pinnedId === p.id}
+      onToggleFocus={
+        variant === 'stage'
+          ? pinnedId === p.id
+            ? () => setPinnedId(null)
+            : undefined
+          : () => setPinnedId((current) => (current === p.id ? null : p.id))
+      }
+    />
+  )
 
   const handleRecordToggle = () => {
     if (recorder.recording) {
@@ -398,40 +472,41 @@ function RoomSession(props: {
       <div className={styles.body}>
         {alone ? (
           <div className={styles.solo}>
-            <div ref={gridRef} className={styles.soloPreview}>
-              {allPeers.map((p) => (
-                <VideoTile
-                  key={p.id}
-                  name={p.name}
-                  stream={p.stream ?? null}
-                  isLocal={p.isLocal}
-                  isHost={p.isHost}
-                  connectionState={p.connectionState}
-                  videoOff={p.isLocal ? !rtc.cameraOn : undefined}
-                  micOff={p.isLocal ? !rtc.micOn : undefined}
-                  sinkId={speakerDeviceId}
-                />
-              ))}
+            <div ref={layoutRef} className={styles.soloPreview}>
+              {allPeers.map((p) => renderTile(p, 'grid'))}
             </div>
             <InviteCard roomId={roomId} url={inviteUrl} />
           </div>
-        ) : (
-          <div ref={gridRef} className={`${styles.grid} ${participantsOpen ? styles.gridNarrow : ''}`}>
-            {allPeers.map((p) => (
-              <VideoTile
-                key={p.id}
-                name={p.name}
-                stream={p.stream ?? null}
-                isLocal={p.isLocal}
-                isHost={p.isHost}
-                connectionState={p.connectionState}
-                videoOff={p.isLocal ? !rtc.cameraOn : undefined}
-                micOff={p.isLocal ? !rtc.micOn : undefined}
-                sinkId={speakerDeviceId}
-              />
-            ))}
+        ) : spotlight && stageTile ? (
+          <div
+            ref={layoutRef}
+            className={`${styles.spotlight} ${participantsOpen ? styles.gridNarrow : ''}`}
+            data-layout="spotlight"
+          >
+            <div className={styles.stage}>{renderTile(stageTile, 'stage')}</div>
+            {strip.length > 0 && (
+              <div className={styles.strip} data-testid="filmstrip">
+                {strip.map((p) => (
+                  <div key={p.id} className={styles.stripItem}>
+                    {renderTile(p, 'strip')}
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
-        )}
+        ) : gridLayout ? (
+          <div
+            ref={layoutRef}
+            className={`${styles.grid} ${participantsOpen ? styles.gridNarrow : ''}`}
+            data-layout={`grid-${gridLayout.cols}x${gridLayout.rows}`}
+            style={{
+              gridTemplateColumns: `repeat(${gridLayout.cols}, minmax(0, 1fr))`,
+              gridTemplateRows: `repeat(${gridLayout.rows}, minmax(0, 1fr))`,
+            }}
+          >
+            {allPeers.map((p) => renderTile(p, 'grid'))}
+          </div>
+        ) : null}
 
         {participantsOpen && (
           <div className={styles.participantsPanel}>
