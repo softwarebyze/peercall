@@ -13,7 +13,7 @@ import { ChatPanel } from './ChatPanel'
 import { InviteCard } from './InviteCard'
 import { IconCopy, IconCheck, IconPeople, IconWarn } from './Icons'
 import { captureCallScreenshot } from '../lib/screenshot'
-import { resolveLayout, type LayoutTile } from '../lib/layout'
+import { gridTracks, resolveLayout, type LayoutTile } from '../lib/layout'
 import type { MediaKind } from '../lib/devices'
 import styles from './Room.module.css'
 
@@ -276,8 +276,18 @@ function RoomSession(props: {
   const gridLayout = layout.mode === 'grid' ? layout : null
   const stageTile = spotlight ? (allPeers.find((p) => p.id === spotlight.stageId) ?? null) : null
   const strip = spotlight ? allPeers.filter((p) => p.id !== spotlight.stageId) : []
+  const tracks = gridLayout ? gridTracks(allPeers.length, gridLayout.cols, gridLayout.rows) : null
+  // Tiles are uniform; only the first tile of a short last row is nudged right
+  // so the row is centered instead of left-hugging with a gap on the right.
+  const tileColumn = (index: number): string | undefined => {
+    if (!tracks) return undefined
+    if (index === tracks.lastRowStart && tracks.lastRowOffset > 0) {
+      return `${1 + tracks.lastRowOffset} / span ${tracks.span}`
+    }
+    return `span ${tracks.span}`
+  }
 
-  const renderTile = (p: CallPeer, variant: TileVariant) => (
+  const renderTile = (p: CallPeer, variant: TileVariant, gridColumn?: string) => (
     <VideoTile
       key={p.id}
       name={p.name}
@@ -291,6 +301,7 @@ function RoomSession(props: {
       variant={variant}
       sharing={p.sharing}
       focused={pinnedId === p.id}
+      gridColumn={gridColumn}
       onToggleFocus={
         variant === 'stage'
           ? pinnedId === p.id
@@ -500,11 +511,11 @@ function RoomSession(props: {
             className={`${styles.grid} ${participantsOpen ? styles.gridNarrow : ''}`}
             data-layout={`grid-${gridLayout.cols}x${gridLayout.rows}`}
             style={{
-              gridTemplateColumns: `repeat(${gridLayout.cols}, minmax(0, 1fr))`,
+              gridTemplateColumns: `repeat(${tracks ? tracks.unit : gridLayout.cols}, minmax(0, 1fr))`,
               gridTemplateRows: `repeat(${gridLayout.rows}, minmax(0, 1fr))`,
             }}
           >
-            {allPeers.map((p) => renderTile(p, 'grid'))}
+            {allPeers.map((p, i) => renderTile(p, 'grid', tileColumn(i)))}
           </div>
         ) : null}
 

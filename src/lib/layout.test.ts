@@ -1,7 +1,44 @@
 import { describe, expect, test } from 'bun:test'
-import { bestGrid, pickPresenter, resolveLayout, type LayoutTile } from './layout'
+import { bestGrid, gridTracks, pickPresenter, resolveLayout, type LayoutTile } from './layout'
 
 const WIDE = 16 / 9
+
+describe('gridTracks', () => {
+  test('a full grid stays on plain single columns', () => {
+    expect(gridTracks(4, 2, 2)).toEqual({ unit: 2, span: 1, lastRowStart: 4, lastRowOffset: 0 })
+  })
+
+  test('a lone tile on the last row is centered (3 in a 2x2)', () => {
+    expect(gridTracks(3, 2, 2)).toEqual({ unit: 4, span: 2, lastRowStart: 2, lastRowOffset: 1 })
+  })
+
+  test('two tiles on the last row are centered in a 3x2 (5 people)', () => {
+    expect(gridTracks(5, 3, 2)).toEqual({ unit: 6, span: 2, lastRowStart: 3, lastRowOffset: 1 })
+  })
+
+  test('equal-size tiles whose final row stays centered', () => {
+    for (const [count, cols, rows] of [
+      [2, 2, 1],
+      [3, 2, 2],
+      [4, 3, 2],
+      [5, 3, 2],
+      [7, 4, 2],
+      [8, 3, 3],
+    ] as const) {
+      const { unit, span, lastRowStart, lastRowOffset } = gridTracks(count, cols, rows)
+      expect(span * cols).toBe(unit)
+      expect(Number.isInteger(lastRowOffset)).toBe(true)
+      if (lastRowOffset > 0) {
+        const lastRow = count - lastRowStart
+        expect(lastRowStart).toBe((rows - 1) * cols)
+        expect(lastRow).toBeGreaterThan(0)
+        expect(lastRow).toBeLessThanOrEqual(cols)
+        // Centered: equal margins either side of the short row.
+        expect(lastRow * span + 2 * lastRowOffset).toBe(unit)
+      }
+    }
+  })
+})
 
 describe('bestGrid', () => {
   test('a single tile fills the whole area', () => {

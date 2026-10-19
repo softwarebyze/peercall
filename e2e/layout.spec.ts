@@ -43,6 +43,16 @@ test.describe('call layout', () => {
       expect(box.width).toBeGreaterThan(box.height)
     }
 
+    // The lone tile on the last row is centered, so it sits between two equal
+    // gaps instead of hugging the left and leaving a dead cell on the right.
+    const gridBox = await grid.boundingBox()
+    const lastBox = await tiles.nth(2).boundingBox()
+    if (!gridBox || !lastBox) throw new Error('missing layout boxes')
+    const leftGap = lastBox.x - gridBox.x
+    const rightGap = gridBox.x + gridBox.width - (lastBox.x + lastBox.width)
+    expect(Math.abs(leftGap - rightGap)).toBeLessThan(12)
+    expect(lastBox.width).toBeCloseTo(boxes[0].width, -1)
+
     for (const peer of peers) await peer.ctx.close()
   })
 

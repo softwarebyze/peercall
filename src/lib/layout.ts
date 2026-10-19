@@ -17,7 +17,10 @@ const TARGET_TILE_ASPECT = 16 / 9
  * Counting alone produces tall "vertical slices" — 3 tiles on a wide screen
  * became a 3x1 row of skinny columns. Factoring in the container aspect keeps
  * the tiles near 16:9 while still filling the space, so 3 tiles on a 16:9 area
- * land on a 2x2 (one cell empty) instead. Ties break toward the larger tiles.
+ * land on a 2x2 instead. Ties break toward the larger tiles.
+ *
+ * A partial last row is handled by {@link gridSpans}, which stretches those
+ * tiles to the full width.
  */
 export function bestGrid(count: number, aspect: number): { cols: number; rows: number } {
   if (count <= 1) return { cols: 1, rows: 1 }
@@ -39,6 +42,42 @@ export function bestGrid(count: number, aspect: number): { cols: number; rows: n
     }
   }
   return best
+}
+
+export interface GridTracks {
+  /** Number of equal columns the template is divided into. */
+  unit: number
+  /** Columns each tile spans (uniform across the grid). */
+  span: number
+  /** Index of the first tile on the final (possibly partial) row. */
+  lastRowStart: number
+  /** Extra columns to skip before that tile, centering the short row. */
+  lastRowOffset: number
+}
+
+/**
+ * Turn a `cols`x`rows` grid into tracks that leave no dead cells.
+ *
+ * A plain `repeat(cols, 1fr)` grid left the empty cells of a partial last row as
+ * bare background (3 people in a 2x2 left the bottom-right hole dark, which read
+ * as a failed tile). Doubling the column count gives the half-cell granularity
+ * needed to center that short row — 5 people in a 3x2 center two tiles with one
+ * cell of margin each side — while every tile keeps an identical size, so no
+ * camera feed gets stretched or cover-cropped.
+ */
+export function gridTracks(count: number, cols: number, rows: number): GridTracks {
+  const fullRow: GridTracks = { unit: cols, span: 1, lastRowStart: count, lastRowOffset: 0 }
+  if (count <= 0 || cols <= 1 || rows <= 1) return fullRow
+  const lastRow = count - (rows - 1) * cols
+  if (lastRow <= 0 || lastRow === cols) return fullRow
+  const unit = cols * 2
+  const span = 2
+  return {
+    unit,
+    span,
+    lastRowStart: (rows - 1) * cols,
+    lastRowOffset: (unit - lastRow * span) / 2,
+  }
 }
 
 /** The peer whose shared screen should take the stage, if anyone is sharing. */

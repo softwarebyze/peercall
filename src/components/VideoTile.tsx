@@ -21,6 +21,8 @@ interface VideoTileProps {
   focused?: boolean
   /** Rendered only when focus can be toggled (not in the lobby). */
   onToggleFocus?: () => void
+  /** CSS `grid-column`, so a short last row can be centered. */
+  gridColumn?: string
 }
 
 const stateLabel: Partial<Record<RTCPeerConnectionState, string>> = {
@@ -71,6 +73,7 @@ export function VideoTile({
   sharing = false,
   focused = false,
   onToggleFocus,
+  gridColumn,
 }: VideoTileProps) {
   const videoRef = useRef<HTMLVideoElement>(null)
   const streamRef = useRef<MediaStream | null>(null)
@@ -105,6 +108,7 @@ export function VideoTile({
       data-variant={variant}
       data-sharing={sharing ? 'true' : undefined}
       data-focused={focused ? 'true' : undefined}
+      style={gridColumn ? { gridColumn } : undefined}
     >
       <video
         ref={videoRef}
