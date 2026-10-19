@@ -89,6 +89,17 @@
   min-width: 0;
   background: #000;
 }
+/* Several people sharing at once: the stage becomes a grid of shared screens
+   (letterboxed, never cropped) so none of them shrinks to a thumbnail. */
+.stageGrid {
+  flex: 1;
+  display: grid;
+  gap: 2px;
+  background: var(--line);
+  overflow: hidden;
+  min-height: 0;
+  min-width: 0;
+}
 .strip {
   flex-shrink: 0;
   display: flex;

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test'
-import { bestGrid, gridTracks, pickPresenter, resolveLayout, type LayoutTile } from './layout'
+import { bestGrid, gridTracks, pickSharers, resolveLayout, type LayoutTile } from './layout'
 
 const WIDE = 16 / 9
 
@@ -82,23 +82,29 @@ describe('bestGrid', () => {
   })
 })
 
-describe('pickPresenter', () => {
+describe('pickSharers', () => {
   const tile = (id: string, sharing: boolean, isLocal = false): LayoutTile => ({
     id,
     sharing,
     isLocal,
   })
 
-  test('returns null when nobody shares', () => {
-    expect(pickPresenter([tile('a', false), tile('b', false)])).toBeNull()
+  test('returns nobody when nobody shares', () => {
+    expect(pickSharers([tile('a', false), tile('b', false)])).toEqual([])
   })
 
-  test('prefers a remote sharer over the local one', () => {
-    expect(pickPresenter([tile('me', true, true), tile('b', true)])).toBe('b')
+  test('orders a remote sharer ahead of the local one', () => {
+    expect(pickSharers([tile('me', true, true), tile('b', true)])).toEqual(['b', 'me'])
   })
 
-  test('falls back to the local sharer when alone in sharing', () => {
-    expect(pickPresenter([tile('me', true, true), tile('b', false)])).toBe('me')
+  test('leads with the local sharer when nobody else shares', () => {
+    expect(pickSharers([tile('me', true, true), tile('b', false)])).toEqual(['me'])
+  })
+
+  test('keeps every sharer, so a second share is not dropped', () => {
+    expect(
+      pickSharers([tile('me', false, true), tile('b', true), tile('c', true)]),
+    ).toEqual(['b', 'c'])
   })
 })
 
@@ -122,6 +128,34 @@ describe('resolveLayout', () => {
     expect(resolveLayout({ tiles: sharing, pinnedId: 'b', aspect: WIDE })).toEqual({
       mode: 'spotlight',
       stageId: 'b',
+    })
+  })
+
+  test('two concurrent sharers split the stage instead of one becoming a thumbnail', () => {
+    const sharing = tiles.map((t) => (t.id === 'c' || t.id === 'b' ? { ...t, sharing: true } : t))
+    expect(resolveLayout({ tiles: sharing, pinnedId: null, aspect: WIDE })).toEqual({
+      mode: 'shares',
+      stageIds: ['b', 'c'],
+      cols: 2,
+      rows: 1,
+    })
+  })
+
+  test('a split stacks the shares on a tall area', () => {
+    const sharing = tiles.map((t) => (t.id === 'c' || t.id === 'b' ? { ...t, sharing: true } : t))
+    expect(resolveLayout({ tiles: sharing, pinnedId: null, aspect: 0.6 })).toEqual({
+      mode: 'shares',
+      stageIds: ['b', 'c'],
+      cols: 1,
+      rows: 2,
+    })
+  })
+
+  test('a pin still overrides a split', () => {
+    const sharing = tiles.map((t) => (t.id === 'c' || t.id === 'b' ? { ...t, sharing: true } : t))
+    expect(resolveLayout({ tiles: sharing, pinnedId: 'me', aspect: WIDE })).toEqual({
+      mode: 'spotlight',
+      stageId: 'me',
     })
   })
 

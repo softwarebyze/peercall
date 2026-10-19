@@ -7,6 +7,7 @@ export interface LayoutTile {
 export type CallLayout =
   | { mode: 'grid'; cols: number; rows: number }
   | { mode: 'spotlight'; stageId: string }
+  | { mode: 'shares'; stageIds: string[]; cols: number; rows: number }
 
 const TARGET_TILE_ASPECT = 16 / 9
 
@@ -19,8 +20,8 @@ const TARGET_TILE_ASPECT = 16 / 9
  * the tiles near 16:9 while still filling the space, so 3 tiles on a 16:9 area
  * land on a 2x2 instead. Ties break toward the larger tiles.
  *
- * A partial last row is handled by {@link gridSpans}, which stretches those
- * tiles to the full width.
+ * A partial last row is handled by {@link gridTracks}, which centers those
+ * tiles instead of leaving a dead cell.
  */
 export function bestGrid(count: number, aspect: number): { cols: number; rows: number } {
   if (count <= 1) return { cols: 1, rows: 1 }
@@ -80,19 +81,23 @@ export function gridTracks(count: number, cols: number, rows: number): GridTrack
   }
 }
 
-/** The peer whose shared screen should take the stage, if anyone is sharing. */
-export function pickPresenter(tiles: LayoutTile[]): string | null {
+/**
+ * Everyone currently sharing, ordered remote-first. A remote presenter leads so
+ * your own share doesn't fight a stage you are already watching; when only you
+ * share, you lead.
+ */
+export function pickSharers(tiles: LayoutTile[]): string[] {
   const sharers = tiles.filter((t) => t.sharing)
-  if (sharers.length === 0) return null
-  // Prefer a remote presenter so your own share doesn't fight a spotlight you
-  // are already watching; fall back to the first sharer when only you share.
-  return (sharers.find((t) => !t.isLocal) ?? sharers[0]).id
+  const ordered = [...sharers.filter((t) => !t.isLocal), ...sharers.filter((t) => t.isLocal)]
+  return ordered.map((t) => t.id)
 }
 
 /**
  * Resolve the call layout:
  *  - an explicit pin wins (focus one participant),
- *  - otherwise an active screen share is spotlighted,
+ *  - otherwise a lone sharer is spotlighted,
+ *  - otherwise concurrent sharers split the stage, so a second share stays
+ *    readable instead of shrinking to a filmstrip thumbnail,
  *  - otherwise everyone shares an even grid sized to the container.
  */
 export function resolveLayout(args: {
@@ -104,8 +109,13 @@ export function resolveLayout(args: {
   if (pinnedId !== null && tiles.some((t) => t.id === pinnedId)) {
     return { mode: 'spotlight', stageId: pinnedId }
   }
-  const presenter = pickPresenter(tiles)
-  if (presenter !== null) return { mode: 'spotlight', stageId: presenter }
+  const sharers = pickSharers(tiles)
+  if (sharers.length > 1) {
+    const { cols, rows } = bestGrid(sharers.length, aspect)
+    return { mode: 'shares', stageIds: sharers, cols, rows }
+  }
+  const sole = sharers[0]
+  if (sole !== undefined) return { mode: 'spotlight', stageId: sole }
   const { cols, rows } = bestGrid(tiles.length, aspect)
   return { mode: 'grid', cols, rows }
 }

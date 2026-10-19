@@ -13,7 +13,7 @@ import { ChatPanel } from './ChatPanel'
 import { InviteCard } from './InviteCard'
 import { IconCopy, IconCheck, IconPeople, IconWarn } from './Icons'
 import { captureCallScreenshot } from '../lib/screenshot'
-import { gridTracks, resolveLayout, type LayoutTile } from '../lib/layout'
+import { gridTracks, resolveLayout, type GridTracks, type LayoutTile } from '../lib/layout'
 import type { MediaKind } from '../lib/devices'
 import styles from './Room.module.css'
 
@@ -273,19 +273,35 @@ function RoomSession(props: {
     aspect,
   })
   const spotlight = layout.mode === 'spotlight' ? layout : null
+  const shares = layout.mode === 'shares' ? layout : null
   const gridLayout = layout.mode === 'grid' ? layout : null
   const stageTile = spotlight ? (allPeers.find((p) => p.id === spotlight.stageId) ?? null) : null
-  const strip = spotlight ? allPeers.filter((p) => p.id !== spotlight.stageId) : []
+  const shareIds = shares ? new Set(shares.stageIds) : null
+  const shareTiles = shares
+    ? shares.stageIds
+        .map((id) => allPeers.find((p) => p.id === id))
+        .filter((p): p is CallPeer => p !== undefined)
+    : []
+  // A sharer's camera is replaced by their screen, so they belong on the stage
+  // and never also in the filmstrip.
+  const strip = spotlight
+    ? allPeers.filter((p) => p.id !== spotlight.stageId)
+    : shareIds
+      ? allPeers.filter((p) => !shareIds.has(p.id))
+      : []
   const tracks = gridLayout ? gridTracks(allPeers.length, gridLayout.cols, gridLayout.rows) : null
+  const shareTracks = shares ? gridTracks(shareTiles.length, shares.cols, shares.rows) : null
   // Tiles are uniform; only the first tile of a short last row is nudged right
   // so the row is centered instead of left-hugging with a gap on the right.
-  const tileColumn = (index: number): string | undefined => {
-    if (!tracks) return undefined
-    if (index === tracks.lastRowStart && tracks.lastRowOffset > 0) {
-      return `${1 + tracks.lastRowOffset} / span ${tracks.span}`
+  const columnFor = (index: number, at: GridTracks | null): string | undefined => {
+    if (!at) return undefined
+    if (index === at.lastRowStart && at.lastRowOffset > 0) {
+      return `${1 + at.lastRowOffset} / span ${at.span}`
     }
-    return `span ${tracks.span}`
+    return `span ${at.span}`
   }
+  const tileColumn = (index: number) => columnFor(index, tracks)
+  const shareColumn = (index: number) => columnFor(index, shareTracks)
 
   const renderTile = (p: CallPeer, variant: TileVariant, gridColumn?: string) => (
     <VideoTile
@@ -495,6 +511,32 @@ function RoomSession(props: {
             data-layout="spotlight"
           >
             <div className={styles.stage}>{renderTile(stageTile, 'stage')}</div>
+            {strip.length > 0 && (
+              <div className={styles.strip} data-testid="filmstrip">
+                {strip.map((p) => (
+                  <div key={p.id} className={styles.stripItem}>
+                    {renderTile(p, 'strip')}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        ) : shares && shareTracks && shareTiles.length > 0 ? (
+          <div
+            ref={layoutRef}
+            className={`${styles.spotlight} ${participantsOpen ? styles.gridNarrow : ''}`}
+            data-layout="shares"
+          >
+            <div
+              className={styles.stageGrid}
+              data-testid="share-stage"
+              style={{
+                gridTemplateColumns: `repeat(${shareTracks.unit}, minmax(0, 1fr))`,
+                gridTemplateRows: `repeat(${shares.rows}, minmax(0, 1fr))`,
+              }}
+            >
+              {shareTiles.map((p, i) => renderTile(p, 'stage', shareColumn(i)))}
+            </div>
             {strip.length > 0 && (
               <div className={styles.strip} data-testid="filmstrip">
                 {strip.map((p) => (
