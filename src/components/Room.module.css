@@ -276,10 +276,11 @@
   padding: 1rem;
 }
 
-/* Muted mic badge on tile label */
+/* Muted mic badge on tile label — amber with the other "device off" cues so
+   red stays reserved for destructive actions and errors. */
 .mutedBadge {
   font-size: 0.68rem;
-  color: var(--danger);
+  color: var(--warn);
   display: inline-flex;
 }
 
@@ -453,23 +454,25 @@
   gap: 0.5rem;
 }
 
+/* Off / active / recording share the base control padding so toggling a
+   control never changes the button's size or shifts its neighbours. */
 .btnOff {
   background: transparent;
-  color: var(--danger);
-  border-color: var(--danger);
-  padding: 0.5rem 0.7rem;
+  color: var(--warn);
+  border-color: var(--warn);
+  padding: 0.55rem 0.9rem;
 }
 .btnRecording {
   background: rgba(255,77,77,0.15);
   color: var(--danger);
   border-color: var(--danger);
-  padding: 0.5rem 0.7rem;
+  padding: 0.55rem 0.9rem;
 }
 .btnActive {
   background: var(--accent-dim);
   color: var(--accent);
   border-color: var(--accent);
-  padding: 0.5rem 0.7rem;
+  padding: 0.55rem 0.9rem;
 }
 
 .devicePanel {
@@ -507,25 +510,26 @@
   text-align: left;
   justify-content: flex-start;
 }
+/* The selected marker is rendered on every row so labels stay aligned. */
+.deviceDotOff {
+  visibility: hidden;
+}
 .deviceSelected {
   border-color: var(--accent);
   color: var(--accent);
   background: var(--accent-dim);
 }
 
-/* Chat panel sits below the header so Copy invite stays clickable. */
+/* Chat is a real side panel inside .body (like Participants): it narrows the
+   stage instead of covering it, so it never hides behind the controls bar. */
 .chatPanel {
-  position: fixed;
-  right: 0;
-  top: 2.75rem;
-  bottom: 3.5rem;
   width: 320px;
-  max-width: 90vw;
+  flex-shrink: 0;
   background: var(--bg-elev);
   border-left: 1px solid var(--line);
   display: flex;
   flex-direction: column;
-  z-index: 15;
+  z-index: 10;
 }
 .chatHeader {
   display: flex;
@@ -664,24 +668,34 @@
   color: var(--text-faint);
 }
 
-/* Empty-room invite */
+/* Empty-room invite: the same two-column rhythm as the lobby, so the preview
+   and the invite card line up and both fit without clipping the QR. */
 .solo {
   flex: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
-  gap: 1.25rem;
-  padding: 1.25rem 1rem 1rem;
+  padding: 1.25rem;
   overflow: auto;
   min-height: 0;
 }
+.soloInner {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(17rem, 22rem);
+  align-items: center;
+  gap: 1.5rem;
+  width: min(860px, 100%);
+  /* `margin: auto` centers when there is room, and stops clipping the top of
+     the content when the viewport is too short to fit it. */
+  margin: auto;
+}
 .soloPreview {
-  width: min(420px, 100%);
-  aspect-ratio: 16 / 10;
+  width: 100%;
+  aspect-ratio: 4 / 3;
   border: 1px solid var(--line);
   overflow: hidden;
-  flex-shrink: 0;
+  min-height: 180px;
+  background: var(--bg-elev);
   position: relative;
 }
 .inviteCard {
@@ -692,7 +706,6 @@
   padding: 1.25rem 1.5rem;
   border: 1px solid var(--line-strong);
   background: var(--bg-elev);
-  max-width: 28rem;
   width: 100%;
   text-align: center;
 }
@@ -784,28 +797,50 @@
   white-space: nowrap;
 }
 
-/* Responsive: on small screens the participants panel overlays the grid
-   instead of disappearing (the toggle button must keep working). */
+/* Responsive: on small screens the side panels overlay the grid instead of
+   disappearing (the toggle button must stay reachable). */
 @media (max-width: 700px) {
-  .participantsPanel {
+  .participantsPanel,
+  .chatPanel {
     position: fixed;
-    top: 2.6rem;
+    top: 2.75rem;
     right: 0;
-    bottom: 3.5rem;
-    width: min(240px, 80vw);
-    border-left: 1px solid var(--line);
+    /* Park exactly on top of the controls bar, whose height is measured at
+       runtime (`--controls-h`), so the panel never hides the controls. */
+    bottom: var(--controls-h, 3.5rem);
     z-index: 30;
   }
+  .participantsPanel { width: min(240px, 80vw); }
+  .chatPanel { width: min(320px, 88vw); }
   .ctrlText { display: none; }
+  .soloInner {
+    grid-template-columns: 1fr;
+    gap: 1rem;
+  }
+  .soloPreview { aspect-ratio: 16 / 9; }
 }
 @media (max-width: 540px) {
   .stripItem {
     width: 116px;
   }
+  /* Full-width sheet on phones (no sliver of grid peeking out). */
   .chatPanel {
     width: 100%;
   }
+  /* The device line is truncated to nothing useful at this width; the gear
+     modal is the place to inspect devices. Saves a whole row. */
+  .deviceReadout {
+    display: none;
+  }
   .lobbyMain {
     grid-template-columns: 1fr;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .recDot,
+  .dotYellow,
+  .spinner {
+    animation: none;
   }
 }

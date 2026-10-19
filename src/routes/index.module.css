@@ -4,7 +4,7 @@
   flex-direction: column;
   align-items: center;
   justify-content: flex-start;
-  padding: 3rem 1.5rem 4.5rem;
+  padding: 3rem 1.5rem 0;
 }
 
 .hero {
@@ -85,6 +85,8 @@
   flex: 1;
   min-width: 0;
   width: 100%;
+  /* Match the taller primary CTA so both rows' inputs are the same height. */
+  min-height: 2.65rem;
 }
 
 .nameInputInvalid {
@@ -144,27 +146,22 @@
   line-height: 1.45;
 }
 
+/* In flow (not fixed) so it can never cover the product mock; `margin-top:auto`
+   pins it to the bottom of the viewport when the page is shorter than 100vh.
+   Negative side margins let it bleed to both edges despite `.page` padding. */
 .footer {
-  position: fixed;
-  bottom: 0;
-  left: 0;
-  z-index: 1;
-  width: 100%;
+  align-self: stretch;
+  margin: auto -1.5rem 0;
   display: flex;
   justify-content: center;
+  align-items: center;
   gap: 0.6rem;
   padding: 0.7rem;
   font-size: 0.7rem;
   border-top: 1px solid var(--line);
   background: var(--bg);
   font-family: var(--font-chrome);
-  /* Decorative bar must not eat CTA clicks if a short viewport overlaps. */
-  pointer-events: none;
 }
-.footer a {
-  pointer-events: auto;
-}
-
 .footerLink {
   color: var(--accent);
   transition: opacity 120ms;

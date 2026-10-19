@@ -133,16 +133,13 @@ export function VideoTile({
       {noVideo && (
         <div className={styles.noVideo}>
           <span className={styles.avatar}>{name.charAt(0).toUpperCase()}</span>
-          {!stream && (
-            <span className={styles.connectionBadge}>
-              {showConnectionIssue
-                ? (stateLabel[connectionState!] ?? connectionState)
+          <span className={styles.connectionBadge}>
+            {showConnectionIssue
+              ? (stateLabel[connectionState!] ?? connectionState)
+              : stream || videoOff
+                ? 'Camera off'
                 : 'Waiting for camera…'}
-            </span>
-          )}
-          {stream && (isLocal ? videoOff : remoteVideoMuted) && (
-            <span className={styles.connectionBadge}>Camera off</span>
-          )}
+          </span>
         </div>
       )}
       {stream && !noVideo && showConnectionIssue && (

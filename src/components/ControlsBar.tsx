@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, type Ref } from 'react'
 import type { DeviceList, MediaKind } from '../lib/devices'
 import { labelFor, supportsSinkId } from '../lib/devices'
 import {
@@ -19,6 +19,8 @@ import { DeviceModal } from './DeviceModal'
 import styles from './Room.module.css'
 
 interface ControlsBarProps {
+  /** Lets the room measure the bar's height so side panels can sit above it. */
+  barRef?: Ref<HTMLDivElement>
   cameraOn: boolean
   micOn: boolean
   cameraAvailable: boolean
@@ -80,7 +82,7 @@ export function ControlsBar(props: ControlsBarProps) {
   })
 
   return (
-    <div className={styles.controls}>
+    <div className={styles.controls} ref={props.barRef}>
       <div className={styles.deviceReadout} data-testid="device-readout" title={`${cameraName} · ${micName} · ${speakerName}`}>
         <span>{cameraName}</span>
         <span className={styles.readoutDot} />

@@ -147,10 +147,15 @@ export function Lobby(args: {
             autoComplete="nickname"
           />
 
-          {media.state.kind === 'blocked' && (
+          {media.state.kind === 'blocked' && !listen && (
             <div className={styles.mediaError}>
               <IconWarn size={16} />
               <span>{media.state.message}</span>
+            </div>
+          )}
+          {listen && (
+            <div className={styles.mediaInfo}>
+              <span>Listen-only. You'll join with your camera and mic off.</span>
             </div>
           )}
           {media.state.kind === 'pending' && <p className="dim">Starting camera and microphone…</p>}
@@ -210,9 +215,10 @@ export function Lobby(args: {
                   Audio only
                 </button>
                 <button
-                  className="btn-ghost"
+                  className={listen ? styles.btnActive : 'btn-ghost'}
                   type="button"
                   onClick={() => setListen(true)}
+                  aria-pressed={listen}
                 >
                   Listen only
                 </button>

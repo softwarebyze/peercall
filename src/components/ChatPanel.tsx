@@ -30,7 +30,9 @@ export function ChatPanel({ chat, myId, onSend }: ChatPanelProps) {
     <div className={styles.chatPanel}>
       <div className={styles.chatHeader}>
         <span style={{ fontWeight: 600, fontSize: '0.8rem' }}>Chat</span>
-        <span className="dim" style={{ fontSize: '0.7rem' }}>{chat.length} messages</span>
+        <span className="dim" style={{ fontSize: '0.7rem' }}>
+          {chat.length} {chat.length === 1 ? 'message' : 'messages'}
+        </span>
       </div>
       <div className={styles.chatMessages} ref={scrollRef}>
         {chat.map((entry) => (

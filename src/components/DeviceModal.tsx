@@ -88,7 +88,7 @@ function DeviceGroup(args: {
             aria-pressed={selected}
             onClick={() => args.onSelect(d.deviceId)}
           >
-            {selected && <span className="pulse-dot" />}
+            <span className={`pulse-dot ${selected ? '' : styles.deviceDotOff}`} aria-hidden />
             {d.label}
           </button>
         )

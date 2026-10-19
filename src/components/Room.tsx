@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, useRef, useEffect } from 'react'
+import { useState, useMemo, useCallback, useRef, useEffect, type CSSProperties } from 'react'
 import { Link } from '@tanstack/react-router'
 import { useSignaling, type SignalMsg, type PeerInfo, type ChatEntry, type SignalStatus } from '../hooks/useSignaling'
 import { useWebRTC } from '../hooks/useWebRTC'
@@ -140,6 +140,8 @@ function RoomSession(props: {
   const [endConfirm, setEndConfirm] = useState(false)
   const [pinnedId, setPinnedId] = useState<string | null>(null)
   const gridRef = useRef<HTMLDivElement>(null)
+  const controlsRef = useRef<HTMLDivElement>(null)
+  const [controlsH, setControlsH] = useState(0)
   const [setLayoutNode, layoutSize] = useElementSize<HTMLDivElement>()
   const layoutRef = useCallback(
     (node: HTMLDivElement | null) => {
@@ -154,6 +156,18 @@ function RoomSession(props: {
     const id = window.setTimeout(() => setToast(null), 4000)
     return () => window.clearTimeout(id)
   }, [toast])
+
+  // Panels that pin above the controls bar need its measured height (the bar
+  // wraps to a different number of rows on small screens).
+  useEffect(() => {
+    const el = controlsRef.current
+    if (!el) return
+    const measure = () => setControlsH(el.offsetHeight)
+    measure()
+    const observer = new ResizeObserver(measure)
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [])
 
   const handleSignal = useMemo(
     () => (msg: SignalMsg) => {
@@ -260,6 +274,7 @@ function RoomSession(props: {
   ])
 
   const alone = allPeers.length === 1
+  const panelOpen = participantsOpen || chatOpen
 
   // Drop a focus on someone who left, so the layout falls back to the grid.
   useEffect(() => {
@@ -412,7 +427,10 @@ function RoomSession(props: {
   ).padStart(2, '0')}`
 
   return (
-    <div className={styles.room}>
+    <div
+      className={styles.room}
+      style={{ '--controls-h': `${controlsH}px` } as CSSProperties}
+    >
       {!connected && (
         <div className={styles.overlay}>
           <div className={styles.spinner} />
@@ -458,6 +476,12 @@ function RoomSession(props: {
         </div>
       )}
 
+      {connected && rtc.listenOnly && (
+        <div className={styles.mediaInfo}>
+          <span>Listen-only. Your camera and microphone stay off.</span>
+        </div>
+      )}
+
       <div className={styles.topBar}>
         <div className={styles.topLeft}>
           <div className="pulse-dot" />
@@ -499,15 +523,17 @@ function RoomSession(props: {
       <div className={styles.body}>
         {alone ? (
           <div className={styles.solo}>
-            <div ref={layoutRef} className={styles.soloPreview}>
-              {allPeers.map((p) => renderTile(p, 'grid'))}
+            <div className={styles.soloInner}>
+              <div ref={layoutRef} className={styles.soloPreview}>
+                {allPeers.map((p) => renderTile(p, 'grid'))}
+              </div>
+              <InviteCard roomId={roomId} url={inviteUrl} />
             </div>
-            <InviteCard roomId={roomId} url={inviteUrl} />
           </div>
         ) : spotlight && stageTile ? (
           <div
             ref={layoutRef}
-            className={`${styles.spotlight} ${participantsOpen ? styles.gridNarrow : ''}`}
+            className={`${styles.spotlight} ${panelOpen ? styles.gridNarrow : ''}`}
             data-layout="spotlight"
           >
             <div className={styles.stage}>{renderTile(stageTile, 'stage')}</div>
@@ -524,7 +550,7 @@ function RoomSession(props: {
         ) : shares && shareTracks && shareTiles.length > 0 ? (
           <div
             ref={layoutRef}
-            className={`${styles.spotlight} ${participantsOpen ? styles.gridNarrow : ''}`}
+            className={`${styles.spotlight} ${panelOpen ? styles.gridNarrow : ''}`}
             data-layout="shares"
           >
             <div
@@ -550,7 +576,7 @@ function RoomSession(props: {
         ) : gridLayout ? (
           <div
             ref={layoutRef}
-            className={`${styles.grid} ${participantsOpen ? styles.gridNarrow : ''}`}
+            className={`${styles.grid} ${panelOpen ? styles.gridNarrow : ''}`}
             data-layout={`grid-${gridLayout.cols}x${gridLayout.rows}`}
             style={{
               gridTemplateColumns: `repeat(${tracks ? tracks.unit : gridLayout.cols}, minmax(0, 1fr))`,
@@ -592,9 +618,18 @@ function RoomSession(props: {
             </div>
           </div>
         )}
+
+        {chatOpen && (
+          <ChatPanel
+            chat={chat}
+            myId={myId ?? ''}
+            onSend={(text) => send('chat', { text })}
+          />
+        )}
       </div>
 
       <ControlsBar
+        barRef={controlsRef}
         cameraOn={rtc.cameraOn}
         micOn={rtc.micOn}
         cameraAvailable={rtc.hasVideo && !rtc.listenOnly}
@@ -620,14 +655,6 @@ function RoomSession(props: {
         onLeave={leaveCall}
         onEndCall={() => setEndConfirm(true)}
       />
-
-      {chatOpen && (
-        <ChatPanel
-          chat={chat}
-          myId={myId ?? ''}
-          onSend={(text) => send('chat', { text })}
-        />
-      )}
 
       {toast && (
         <div className={styles.toast} data-testid="toast" role="status">
