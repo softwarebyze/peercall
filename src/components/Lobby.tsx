@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link } from '@tanstack/react-router'
 import { useLocalMedia, type MediaHandoff } from '../hooks/useLocalMedia'
 import { useMediaDevices } from '../hooks/useMediaDevices'
@@ -6,7 +6,7 @@ import { useMicLevel } from '../hooks/useMicLevel'
 import { VideoTile } from './VideoTile'
 import { DeviceModal } from './DeviceModal'
 import { IconCamera, IconCameraOff, IconGear, IconMic, IconMicOff, IconWarn } from './Icons'
-import { labelFor, supportsSinkId, type MediaKind } from '../lib/devices'
+import { activeDeviceId, labelFor, supportsSinkId, type MediaKind } from '../lib/devices'
 import styles from './Room.module.css'
 
 export function Lobby(args: {
@@ -20,11 +20,30 @@ export function Lobby(args: {
   const [listen, setListen] = useState(false)
   const [devicesOpen, setDevicesOpen] = useState(false)
   const [speakerId, setSpeakerId] = useState<string | null>(null)
+  const [cameraId, setCameraId] = useState<string | null>(null)
+  const [micId, setMicId] = useState<string | null>(null)
   const media = useLocalMedia()
   const stream = media.state.kind === 'live' ? media.state.stream : null
   const devices = useMediaDevices({ stream })
   const micLevel = useMicLevel({ stream, active: micOn && !listen })
   const speakerOk = supportsSinkId()
+
+  // Refs mirror the latest values so an async device switch resolves against
+  // the stream and toggles that are current when it lands, not the ones
+  // captured at click time.
+  const streamRef = useRef<MediaStream | null>(null)
+  streamRef.current = stream
+  const cameraOnRef = useRef(cameraOn)
+  cameraOnRef.current = cameraOn
+  const micOnRef = useRef(micOn)
+  micOnRef.current = micOn
+  const aliveRef = useRef(true)
+  useEffect(
+    () => () => {
+      aliveRef.current = false
+    },
+    []
+  )
 
   useEffect(() => {
     if (media.state.kind === 'live') {
@@ -37,10 +56,16 @@ export function Lobby(args: {
     }
   }, [media.state, cameraOn, micOn])
 
+  // The active device lives on the live track, and `switchDevice` mutates the
+  // stream in place (so its identity never changes). Track the ids in state and
+  // refresh them whenever the stream itself is replaced.
+  useEffect(() => {
+    setCameraId(activeDeviceId({ stream, kind: 'video' }))
+    setMicId(activeDeviceId({ stream, kind: 'audio' }))
+  }, [stream])
+
   const hasVideo = media.state.kind === 'live' && media.state.hasVideo
   const hasAudio = media.state.kind === 'live' && media.state.hasAudio
-  const cameraId = stream?.getVideoTracks()[0]?.getSettings().deviceId ?? null
-  const micId = stream?.getAudioTracks()[0]?.getSettings().deviceId ?? null
 
   const switchDevice = (sel: { kind: MediaKind; deviceId: string }) => {
     if (sel.kind === 'speaker') {
@@ -54,15 +79,24 @@ export function Lobby(args: {
       })
       .then((next) => {
         const newTrack = next.getTracks()[0]
-        if (!newTrack || media.state.kind !== 'live') {
+        // Only mutate the stream we still own. If the lobby unmounted, or
+        // `retry`/`audioOnly` swapped in a new (or stopped) stream while
+        // getUserMedia was pending, adding here would leak the fresh track and
+        // leave the active stream unchanged.
+        const target = streamRef.current
+        const targetLive = target?.getTracks().some((t) => t.readyState === 'live') ?? false
+        if (!aliveRef.current || !newTrack || !target || !targetLive) {
           next.getTracks().forEach((t) => t.stop())
           return
         }
-        const old = media.state.stream.getTracks().find((t) => t.kind === trackKind)
+        const old = target.getTracks().find((t) => t.kind === trackKind)
         old?.stop()
-        if (old) media.state.stream.removeTrack(old)
-        media.state.stream.addTrack(newTrack)
-        newTrack.enabled = trackKind === 'video' ? cameraOn : micOn
+        if (old) target.removeTrack(old)
+        target.addTrack(newTrack)
+        newTrack.enabled = trackKind === 'video' ? cameraOnRef.current : micOnRef.current
+        const activeId = activeDeviceId({ stream: target, kind: trackKind })
+        if (trackKind === 'video') setCameraId(activeId)
+        else setMicId(activeId)
       })
       .catch(() => {})
   }

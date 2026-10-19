@@ -8,6 +8,9 @@ on:
 #   fly tokens create org --name "github-actions-pr-reviews"
 # Do NOT use `fly auth token` (the all-powerful auth token).
 #
+# Optional REVIEW_APP_ADMIN_TOKEN (Administration: write) lets the cleanup step
+# delete the pr-<n> environment on close. Without it the delete is best-effort.
+#
 # `secrets` is not a valid context in a job-level `if`, so the token check
 # happens in a step that exports an output the later steps gate on.
 permissions:
@@ -50,8 +53,15 @@ jobs:
           FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
 
       - name: Clean up GitHub environment
+        # Only relevant when we actually deployed, and best-effort: deleting a
+        # GitHub environment needs repository Administration write, which
+        # GITHUB_TOKEN cannot be granted. Supply a scoped token via the
+        # REVIEW_APP_ADMIN_TOKEN secret to actually remove the environment;
+        # otherwise the delete is skipped/ignored so it can never red-X a
+        # closed PR.
+        if: ${{ always() && github.event.action == 'closed' && steps.fly-token.outputs.set == 'true' }}
+        continue-on-error: true
         uses: strumwolf/delete-deployment-environment@v2
-        if: ${{ always() && github.event.action == 'closed' }}
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+          token: ${{ secrets.REVIEW_APP_ADMIN_TOKEN || secrets.GITHUB_TOKEN }}
           environment: pr-${{ github.event.number }}

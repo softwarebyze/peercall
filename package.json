@@ -13,7 +13,7 @@
     "prod": "bun run build && bun run server.ts",
     "deploy": "flyctl deploy --remote-builder",
     "typecheck": "tsc --noEmit && tsc --noEmit -p tsconfig.server.json && tsc --noEmit -p tsconfig.e2e.json",
-    "test": "bun test src",
+    "test": "bun test src signal",
     "e2e": "playwright test",
     "demo": "bun run scripts/demo/repro.ts"
   },

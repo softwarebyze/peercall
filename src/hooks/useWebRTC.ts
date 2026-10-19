@@ -1,6 +1,7 @@
 import { useRef, useState, useCallback, useEffect } from 'react'
 import type { SignalMsg } from './useSignaling'
 import type { MediaHandoff } from './useLocalMedia'
+import { reacquireConstraints } from '../lib/media'
 
 // Fallback if /config is unreachable. STUN only — TURN comes from the server
 // (/config) when TURN_* or free Metered Open Relay env vars are set.
@@ -318,9 +319,20 @@ export function useWebRTC(opts: {
   }, [])
 
   const acquireMedia = useCallback(
-    async (constraints: { video: boolean; audio: boolean }) => {
+    async (
+      constraints: { video: boolean; audio: boolean },
+      shouldCommit: () => boolean = () => true,
+    ) => {
       try {
         const stream = await navigator.mediaDevices.getUserMedia(constraints)
+        // The caller that kicked this off may have been torn down while
+        // getUserMedia was pending — unmount, or a newer acquisition/retry.
+        // Only the still-owning caller may commit; anyone else stops what it
+        // acquired so we never clobber a newer stream or leak live tracks.
+        if (!shouldCommit()) {
+          stream.getTracks().forEach((t) => t.stop())
+          return
+        }
         takeStream(stream)
         stream.getVideoTracks().forEach((t) => {
           t.enabled = cameraOnRef.current
@@ -329,6 +341,7 @@ export function useWebRTC(opts: {
           t.enabled = micOnRef.current
         })
       } catch (err) {
+        if (!shouldCommit()) return
         const name =
           typeof err === 'object' && err !== null && 'name' in err && typeof err.name === 'string'
             ? err.name
@@ -361,12 +374,12 @@ export function useWebRTC(opts: {
         return
       }
     }
+    // No live stream was handed off. Re-acquire here — this is the rejoin path
+    // (the lobby's stream was stopped by endCall on leave) or a fresh join with
+    // no handoff. Preserve the handed-off mode: an audio-only session must not
+    // suddenly request a camera that may not exist.
     let cancelled = false
-    void acquireMedia({ video: true, audio: true }).then(() => {
-      if (cancelled && localStreamRef.current) {
-        localStreamRef.current.getTracks().forEach((t) => t.stop())
-      }
-    })
+    void acquireMedia(reacquireConstraints(initialMedia), () => !cancelled)
     return () => {
       cancelled = true
     }

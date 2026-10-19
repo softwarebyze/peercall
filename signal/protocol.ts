@@ -150,7 +150,7 @@ function asJoin(payload: unknown): { roomId: string; name: string } | null {
   if (typeof roomId !== "string" || typeof name !== "string") return null;
   const trimmedName = name.trim();
   if (!roomId || !trimmedName) return null;
-  if (roomId.length > MAX_ROOM_ID_LENGTH || trimmedName.length > MAX_NAME_LENGTH) return null;
+  if (roomId.length > MAX_ROOM_ID_LENGTH) return null;
   return { roomId, name: trimmedName.slice(0, MAX_NAME_LENGTH) };
 }
 

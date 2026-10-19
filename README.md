@@ -27,7 +27,7 @@ Open http://localhost:3000
 ### Tests
 
 ```bash
-bun test                 # unit tests (URL parse, devices, signaling)
+bun run test             # unit tests (URL parse, devices, signaling)
 bun run typecheck
 ```
 
