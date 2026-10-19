@@ -532,7 +532,17 @@ export function useWebRTC(opts: {
       const camStream = await navigator.mediaDevices.getUserMedia({ video: true })
       const camTrack = camStream.getVideoTracks()[0]
       if (!camTrack) {
+        camStream.getTracks().forEach((t) => t.stop())
         dropScreenTrack()
+        return
+      }
+      // The call can be torn down, or the local stream replaced, while
+      // getUserMedia is in flight. Attaching the fresh track then would leave
+      // the camera on in a stream nobody owns — and re-publishing state for a
+      // stream we no longer hold. Stop the tracks and leave state alone.
+      if (!local || !screenTrack || localStreamRef.current !== local) {
+        camStream.getTracks().forEach((t) => t.stop())
+        screenTrack?.stop()
         return
       }
 

@@ -326,8 +326,8 @@ function RoomSession(props: {
       isLocal={p.isLocal}
       isHost={p.isHost}
       connectionState={p.connectionState}
-      videoOff={p.isLocal ? !rtc.cameraOn : undefined}
-      micOff={p.isLocal ? !rtc.micOn : undefined}
+      videoOff={p.isLocal ? rtc.listenOnly || !rtc.cameraOn : undefined}
+      micOff={p.isLocal ? rtc.listenOnly || !rtc.micOn : undefined}
       sinkId={speakerDeviceId}
       variant={variant}
       sharing={p.sharing}
