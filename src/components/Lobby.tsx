@@ -131,8 +131,10 @@ export function Lobby(args: {
             <span className="dim">·</span>
             <span className={styles.roomCode}>{args.roomId}</span>
           </div>
-          <h1 className={styles.lobbyTitle}>Ready?</h1>
-          <p className="dim">Check your camera and mic before anyone else hears you.</p>
+          <div className={styles.lobbyIntro}>
+            <h1 className={styles.lobbyTitle}>Ready?</h1>
+            <p className={`${styles.lobbyDescription} dim`}>Check your camera and mic before anyone else hears you.</p>
+          </div>
 
           <label className={styles.fieldLabel} htmlFor="lobby-name">
             Name shown to others

@@ -592,9 +592,18 @@
 .lobbyForm input {
   width: 100%;
 }
+.lobbyIntro {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+.lobbyDescription {
+  margin: 0;
+}
 .lobbyTitle {
   margin: 0;
   font-size: 1.8rem;
+  line-height: 1.15;
   letter-spacing: -0.04em;
 }
 .badgeRow {
