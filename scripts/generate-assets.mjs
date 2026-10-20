@@ -34,6 +34,11 @@ const ogSvg = readFileSync(resolve(root, 'scripts/assets/og-image.svg'), 'utf8')
   .replace('__FONT_BOLD__', bold.toString('base64'))
 await sharp(Buffer.from(ogSvg)).png().toFile(out('og-image.png'))
 console.log('✓ og-image.png (1200x630)')
+const joinSvg = readFileSync(resolve(root, 'scripts/assets/og-join.svg'), 'utf8')
+  .replace('__FONT_REGULAR__', regular.toString('base64'))
+  .replace('__FONT_BOLD__', bold.toString('base64'))
+await sharp(Buffer.from(joinSvg)).png().toFile(out('og-join.png'))
+console.log('✓ og-join.png (1200x630)')
 
 // ─── favicon.ico (PNG-compressed 32px) ───────────────────────────────────────
 const png32 = await sharp(faviconSvg).resize(32, 32).png().toBuffer()
