@@ -9,6 +9,7 @@ export interface Peer {
   id: PeerId;
   name: string;
   isHost: boolean;
+  sharing: boolean;
   ws: ServerWebSocket<unknown>;
   room: RoomId;
 }
@@ -94,6 +95,7 @@ export function broadcastRoomState(room: Room) {
     id: p.id,
     name: p.name,
     isHost: p.id === room.hostId,
+    sharing: p.sharing,
   }));
   for (const p of room.peers.values()) {
     p.ws.send(pack("room_state", { peers, chat: room.chat }));
@@ -143,7 +145,7 @@ export function handleMessage(ws: ServerWebSocket<unknown>, raw: string | Buffer
       ws.send(pack("error", { message: "room full (max 8)" }));
       return;
     }
-    const peer: Peer = { id, name, isHost: false, ws, room: roomId };
+    const peer: Peer = { id, name, isHost: false, sharing: false, ws, room: roomId };
     room.peers.set(id, peer);
     if (room.hostId === null) room.hostId = id;
 
@@ -192,6 +194,15 @@ export function handleMessage(ws: ServerWebSocket<unknown>, raw: string | Buffer
     for (const p of room.peers.values()) {
       p.ws.send(pack("chat", entry));
     }
+    return;
+  }
+
+  if (t === "screen_share") {
+    if (!payload || typeof payload.sharing !== "boolean") return;
+    const peer = room.peers.get(peerId);
+    if (!peer || peer.sharing === payload.sharing) return;
+    peer.sharing = payload.sharing;
+    broadcastRoomState(room);
     return;
   }
 

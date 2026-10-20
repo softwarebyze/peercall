@@ -6,7 +6,7 @@ function getSignalUrl(): string {
   return `${proto}//${window.location.host}/signal`
 }
 
-export type PeerInfo = { id: string; name: string; isHost: boolean }
+export type PeerInfo = { id: string; name: string; isHost: boolean; sharing?: boolean }
 export type ChatEntry = { id: string; from: string; name: string; text: string; ts: number }
 
 export type SignalMsg =

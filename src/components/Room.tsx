@@ -5,6 +5,8 @@ import { useRecorder } from '../hooks/useRecorder'
 import { VideoTile } from './VideoTile'
 import { ControlsBar } from './ControlsBar'
 import { ChatPanel } from './ChatPanel'
+import { useElementSize } from '../hooks/useElementSize'
+import { gridTracks, resolveLayout } from '../lib/layout'
 import styles from './Room.module.css'
 
 interface RoomProps {
@@ -30,6 +32,7 @@ export function Room({ roomId, displayName, isHost }: RoomProps) {
   const [signalError, setSignalError] = useState<string | null>(null)
   const [devices, setDevices] = useState<{ video: MediaDeviceInfo[]; audio: MediaDeviceInfo[] }>({ video: [], audio: [] })
   const [copied, setCopied] = useState(false)
+  const [layoutRef, layoutSize] = useElementSize<HTMLDivElement>()
 
   const handleSignal = useMemo(
     () => (msg: SignalMsg) => {
@@ -114,6 +117,7 @@ export function Room({ roomId, displayName, isHost }: RoomProps) {
       id: myId ?? 'me',
       name: displayName,
       isHost: isHostHere,
+      sharing: rtc.screenSharing,
       stream: rtc.localStream,
       isLocal: true,
       connectionState: 'connected' as RTCPeerConnectionState,
@@ -126,6 +130,7 @@ export function Room({ roomId, displayName, isHost }: RoomProps) {
           id: p.id,
           name: p.name,
           isHost: p.isHost,
+          sharing: p.sharing ?? false,
           stream: media?.stream ?? null,
           isLocal: false,
           connectionState:
@@ -133,7 +138,59 @@ export function Room({ roomId, displayName, isHost }: RoomProps) {
         }
       })
     return [me, ...remotes]
-  }, [myId, displayName, isHostHere, peers, rtc.localStream, rtc.remoteStreams, rtc.connectionStates])
+  }, [myId, displayName, isHostHere, peers, rtc.localStream, rtc.remoteStreams, rtc.connectionStates, rtc.screenSharing])
+
+  const aspect = layoutSize.height > 0 ? layoutSize.width / layoutSize.height : 16 / 9
+  const layout = resolveLayout({
+    tiles: allPeers.map((p) => ({ id: p.id, sharing: p.sharing, isLocal: p.isLocal })),
+    aspect,
+  })
+  const spotlight = layout.mode === 'spotlight' ? layout : null
+  const shares = layout.mode === 'shares' ? layout : null
+  const gridLayout = layout.mode === 'grid' ? layout : null
+  const stageTile = spotlight ? (allPeers.find((p) => p.id === spotlight.stageId) ?? null) : null
+  const shareIds = shares ? new Set(shares.stageIds) : null
+  const shareTiles = shares
+    ? shares.stageIds
+        .map((id) => allPeers.find((p) => p.id === id))
+        .filter((p): p is (typeof allPeers)[number] => p !== undefined)
+    : []
+  // A sharer's camera is replaced by their screen, so they belong on the stage
+  // and never also in the filmstrip.
+  const strip = spotlight
+    ? allPeers.filter((p) => p.id !== spotlight.stageId)
+    : shareIds
+      ? allPeers.filter((p) => !shareIds.has(p.id))
+      : []
+  const tracks = gridLayout ? gridTracks(allPeers.length, gridLayout.cols, gridLayout.rows) : null
+  const shareTracks = shares ? gridTracks(shareTiles.length, shares.cols, shares.rows) : null
+  // Tiles are uniform; only the first tile of a short last row is nudged right
+  // so the row is centered instead of left-hugging with a gap on the right.
+  const columnFor = (index: number, at: ReturnType<typeof gridTracks> | null): string | undefined => {
+    if (!at) return undefined
+    if (index === at.lastRowStart && at.lastRowOffset > 0) {
+      return `${1 + at.lastRowOffset} / span ${at.span}`
+    }
+    return `span ${at.span}`
+  }
+  const tileColumn = (index: number) => columnFor(index, tracks)
+  const shareColumn = (index: number) => columnFor(index, shareTracks)
+
+  const renderTile = (p: (typeof allPeers)[number], variant: 'grid' | 'strip' | 'stage', gridColumn?: string) => (
+    <VideoTile
+      key={p.id}
+      name={p.name}
+      stream={p.stream}
+      isLocal={p.isLocal}
+      isHost={p.isHost}
+      connectionState={p.connectionState}
+      videoOff={p.isLocal ? !rtc.cameraOn : undefined}
+      micOff={p.isLocal ? !rtc.micOn : undefined}
+      variant={variant}
+      sharing={p.sharing}
+      gridColumn={gridColumn}
+    />
+  )
 
   const handleRecordToggle = () => {
     if (recorder.recording) {
@@ -234,20 +291,62 @@ export function Room({ roomId, displayName, isHost }: RoomProps) {
       </div>
 
       <div className={styles.body}>
-        <div className={`${styles.grid} ${participantsOpen ? styles.gridNarrow : ''}`}>
-          {allPeers.map((p) => (
-            <VideoTile
-              key={p.id}
-              name={p.name}
-              stream={p.stream ?? null}
-              isLocal={p.isLocal}
-              isHost={p.isHost}
-              connectionState={p.connectionState}
-              videoOff={p.isLocal ? !rtc.cameraOn : undefined}
-              micOff={p.isLocal ? !rtc.micOn : undefined}
-            />
-          ))}
-        </div>
+        {spotlight && stageTile ? (
+          <div
+            ref={layoutRef}
+            className={`${styles.spotlight} ${participantsOpen ? styles.gridNarrow : ''}`}
+            data-layout="spotlight"
+          >
+            <div className={styles.stage}>{renderTile(stageTile, 'stage')}</div>
+            {strip.length > 0 && (
+              <div className={styles.strip} data-testid="filmstrip">
+                {strip.map((p) => (
+                  <div key={p.id} className={styles.stripItem}>
+                    {renderTile(p, 'strip')}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        ) : shares && shareTracks && shareTiles.length > 0 ? (
+          <div
+            ref={layoutRef}
+            className={`${styles.spotlight} ${participantsOpen ? styles.gridNarrow : ''}`}
+            data-layout="shares"
+          >
+            <div
+              className={styles.stageGrid}
+              data-testid="share-stage"
+              style={{
+                gridTemplateColumns: `repeat(${shareTracks.unit}, minmax(0, 1fr))`,
+                gridTemplateRows: `repeat(${shares.rows}, minmax(0, 1fr))`,
+              }}
+            >
+              {shareTiles.map((p, i) => renderTile(p, 'stage', shareColumn(i)))}
+            </div>
+            {strip.length > 0 && (
+              <div className={styles.strip} data-testid="filmstrip">
+                {strip.map((p) => (
+                  <div key={p.id} className={styles.stripItem}>
+                    {renderTile(p, 'strip')}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        ) : gridLayout ? (
+          <div
+            ref={layoutRef}
+            className={`${styles.grid} ${participantsOpen ? styles.gridNarrow : ''}`}
+            data-layout={`grid-${gridLayout.cols}x${gridLayout.rows}`}
+            style={{
+              gridTemplateColumns: `repeat(${tracks ? tracks.unit : gridLayout.cols}, minmax(0, 1fr))`,
+              gridTemplateRows: `repeat(${gridLayout.rows}, minmax(0, 1fr))`,
+            }}
+          >
+            {allPeers.map((p, i) => renderTile(p, 'grid', tileColumn(i)))}
+          </div>
+        ) : null}
 
         {participantsOpen && (
           <div className={styles.participantsPanel}>

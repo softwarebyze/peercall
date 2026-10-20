@@ -11,6 +11,9 @@ interface VideoTileProps {
   videoOff?: boolean
   /** Local-only: we know our own mic state directly. */
   micOff?: boolean
+  variant?: 'grid' | 'strip' | 'stage'
+  sharing?: boolean
+  gridColumn?: string
 }
 
 const stateLabel: Partial<Record<RTCPeerConnectionState, string>> = {
@@ -48,7 +51,7 @@ function useTrackMuted(stream: MediaStream | null, kind: 'video' | 'audio'): boo
   return muted
 }
 
-export function VideoTile({ name, stream, isLocal, isHost, connectionState, videoOff, micOff }: VideoTileProps) {
+export function VideoTile({ name, stream, isLocal, isHost, connectionState, videoOff, micOff, variant = 'grid', sharing = false, gridColumn }: VideoTileProps) {
   const videoRef = useRef<HTMLVideoElement>(null)
   const streamRef = useRef<MediaStream | null>(null)
 
@@ -69,10 +72,12 @@ export function VideoTile({ name, stream, isLocal, isHost, connectionState, vide
     !isLocal && connectionState && connectionState !== 'connected' && connectionState !== 'closed'
 
   return (
-    <div className={styles.tile}>
+    <div className={`${styles.tile} ${styles[`tile_${variant}`]}`} data-tile
+      data-tile-name={isLocal ? `${name} (you)` : name} data-variant={variant}
+      data-sharing={sharing ? 'true' : undefined} style={gridColumn ? { gridColumn } : undefined}>
       <video
         ref={videoRef}
-        className={styles.video}
+        className={variant === 'stage' || sharing ? styles.videoContain : styles.video}
         style={noVideo ? { visibility: 'hidden' } : undefined}
         autoPlay
         playsInline
@@ -99,6 +104,7 @@ export function VideoTile({ name, stream, isLocal, isHost, connectionState, vide
         </div>
       )}
       <div className={styles.tileLabel}>
+        {sharing && <span className={styles.presentBadge}>Presenting</span>}
         <span>{isLocal ? `${name} (you)` : name}</span>
         {micMuted && stream && (
           <span className={styles.mutedBadge} title="Microphone muted">
