@@ -24,6 +24,10 @@ export function useMicLevel(args: { stream: MediaStream | null; active: boolean 
     resume()
     document.addEventListener('pointerdown', resume)
     const timer = window.setInterval(() => {
+      if (ctx.state !== 'running' || !track.enabled || track.muted || track.readyState === 'ended') {
+        setLevel(0)
+        return
+      }
       analyser.getByteTimeDomainData(data)
       let sum = 0
       for (const sample of data) sum += ((sample - 128) / 128) ** 2
@@ -40,5 +44,5 @@ export function useMicLevel(args: { stream: MediaStream | null; active: boolean 
       }
     }
   }, [track, args.active])
-  return level
+  return args.active ? level : 0
 }

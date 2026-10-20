@@ -23,6 +23,7 @@ interface CallPeer {
   name: string
   isHost: boolean
   sharing: boolean
+  micOff: boolean
   stream: MediaStream | null
   isLocal: boolean
   connectionState: RTCPeerConnectionState
@@ -201,6 +202,13 @@ function RoomSession(props: {
     initialMedia,
   })
 
+  const micOff = rtc.listenOnly || !rtc.micOn || !rtc.hasAudio
+  // Track.enabled does not communicate the user's mute intent to receivers.
+  // Republish after signaling reconnects, as well as on each local change.
+  useEffect(() => {
+    if (connected) send('media_state', { micOn: !micOff })
+  }, [connected, send, micOff])
+
   const recorder = useRecorder()
   const devices = useMediaDevices({ stream: rtc.localStream })
   const micLevel = useMicLevel({ stream: rtc.localStream, active: rtc.micOn })
@@ -241,6 +249,7 @@ function RoomSession(props: {
       name: displayName,
       isHost: isHostHere,
       sharing: rtc.screenSharing,
+      micOff,
       stream: rtc.localStream,
       isLocal: true,
       connectionState: 'connected',
@@ -254,6 +263,7 @@ function RoomSession(props: {
           name: p.name,
           isHost: p.isHost,
           sharing: p.sharing,
+          micOff: !p.micOn,
           stream: media?.stream ?? null,
           isLocal: false,
           connectionState:
@@ -267,6 +277,7 @@ function RoomSession(props: {
     isHostHere,
     peers,
     rtc.screenSharing,
+    micOff,
     rtc.localStream,
     rtc.remoteStreams,
     rtc.connectionStates,
@@ -300,7 +311,7 @@ function RoomSession(props: {
         isHost={p.isHost}
         connectionState={p.connectionState}
         videoOff={p.isLocal ? !rtc.screenSharing && (rtc.listenOnly || !rtc.cameraOn || !rtc.hasVideo) : undefined}
-        micOff={p.isLocal ? rtc.listenOnly || !rtc.micOn || !rtc.hasAudio : undefined}
+        micOff={p.micOff}
         sinkId={speakerDeviceId}
         variant={slot.variant}
         sharing={p.sharing}

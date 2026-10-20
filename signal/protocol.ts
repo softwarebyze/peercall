@@ -10,6 +10,7 @@ export interface Peer {
   name: string;
   isHost: boolean;
   sharing: boolean;
+  micOn: boolean;
   ws: ServerWebSocket<unknown>;
   room: RoomId;
 }
@@ -97,6 +98,7 @@ export function broadcastRoomState(room: Room) {
     name: p.name,
     isHost: p.id === room.hostId,
     sharing: p.sharing,
+    micOn: p.micOn,
   }));
   for (const p of room.peers.values()) {
     p.ws.send(pack("room_state", { peers, chat: room.chat }));
@@ -223,7 +225,7 @@ export function handleMessage(ws: ServerWebSocket<unknown>, raw: string | Buffer
     }
     const id: PeerId = crypto.randomUUID();
     peerByWs.set(ws, id);
-    const peer: Peer = { id, name, isHost: false, sharing: false, ws, room: roomId };
+    const peer: Peer = { id, name, isHost: false, sharing: false, micOn: true, ws, room: roomId };
     room.peers.set(id, peer);
     if (room.hostId === null) room.hostId = id;
 
@@ -271,6 +273,15 @@ export function handleMessage(ws: ServerWebSocket<unknown>, raw: string | Buffer
     for (const p of room.peers.values()) {
       p.ws.send(pack("chat", entry));
     }
+    return;
+  }
+
+  if (t === "media_state") {
+    if (!isRecord(payload) || typeof payload.micOn !== "boolean") return;
+    const peer = room.peers.get(peerId);
+    if (!peer || peer.micOn === payload.micOn) return;
+    peer.micOn = payload.micOn;
+    broadcastRoomState(room);
     return;
   }
 

@@ -11,7 +11,7 @@ interface VideoTileProps {
   connectionState?: RTCPeerConnectionState
   /** Local-only: we know our own camera state directly. */
   videoOff?: boolean
-  /** Local-only: we know our own mic state directly. */
+  /** Explicit local or signaled remote microphone state. */
   micOff?: boolean
   sinkId?: string | null
   /** Where this tile is rendered — affects fit and chrome. */
@@ -36,8 +36,7 @@ const stateLabel: Partial<Record<RTCPeerConnectionState, string>> = {
   failed: 'Connection failed',
 }
 
-/** Track remote video/audio availability: a disabled remote track stops
- * producing frames, which fires `mute` on the receiving side. */
+/** Track transport availability, separate from the sender's explicit mute intent. */
 function useTrackMuted(stream: MediaStream | null, kind: 'video' | 'audio'): boolean {
   const [muted, setMuted] = useState(false)
   useEffect(() => {
@@ -107,9 +106,10 @@ export function VideoTile({
   const remoteVideoMuted = useTrackMuted(isLocal ? null : stream, 'video')
   const remoteAudioMuted = useTrackMuted(isLocal ? null : stream, 'audio')
 
-  const level = useMicLevel({ stream, active: !micOff })
+  const micMuted = micOff ?? remoteAudioMuted
+  const level = useMicLevel({ stream, active: !micMuted })
+  const audioActive = !micMuted && level > 0.05
   const noVideo = !stream || (isLocal ? !!videoOff : remoteVideoMuted)
-  const micMuted = isLocal ? !!micOff : remoteAudioMuted
   const showConnectionIssue =
     !isLocal && connectionState && connectionState !== 'connected' && connectionState !== 'closed'
 
@@ -161,8 +161,8 @@ export function VideoTile({
         </div>
       )}
       <div className={styles.tileLabel}>
-        <span className={styles.peerAudio} data-testid="peer-audio-level" data-active={level > 0.05 && !micMuted ? 'true' : 'false'} title={`Audio activity: ${name}`} aria-hidden>
-          {[0, 1, 2].map(i => <i key={i} style={{ opacity: !micMuted && level > i / 3 ? 1 : 0.2 }} />)}
+        <span className={styles.peerAudio} data-testid="peer-audio-level" data-active={audioActive ? 'true' : 'false'} title={`Audio activity: ${name}`} aria-hidden>
+          {[0, 1, 2].map(i => <i key={i} style={{ opacity: audioActive && level > i / 3 ? 1 : 0.2 }} />)}
         </span>
         {sharing && (
           <span className={styles.presentBadge} title="Sharing their screen">
@@ -170,7 +170,7 @@ export function VideoTile({
           </span>
         )}
         <span>{isLocal ? `${name} (you)` : name}</span>
-        {micMuted && stream && (
+        {micMuted && (
           <span className={styles.mutedBadge} title="Microphone muted">
             <IconMicOff size={12} />
           </span>

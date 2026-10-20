@@ -185,3 +185,33 @@ describe('handleMessage chat', () => {
     expect(ws.sent.some((m) => m.t === 'error' && m.payload.message === 'not joined')).toBe(true)
   })
 })
+
+describe('handleMessage media_state', () => {
+  test('broadcasts mute intent to existing peers and preserves it for late joiners', () => {
+    const alice = fakeWs()
+    const bob = fakeWs()
+    join(alice, 'mute-room', 'Alice')
+    join(bob, 'mute-room', 'Bob')
+    handleMessage(alice, JSON.stringify({ t: 'media_state', payload: { micOn: false } }))
+    const state = bob.sent.filter(m => m.t === 'room_state').at(-1)
+    expect((state?.payload.peers as { name: string; micOn: boolean }[]).find(p => p.name === 'Alice')?.micOn).toBe(false)
+    const late = fakeWs()
+    join(late, 'mute-room', 'Late')
+    const lateState = late.sent.filter(m => m.t === 'room_state').at(-1)
+    expect((lateState?.payload.peers as { name: string; micOn: boolean }[]).find(p => p.name === 'Alice')?.micOn).toBe(false)
+    handleMessage(alice, JSON.stringify({ t: 'media_state', payload: { micOn: true } }))
+    expect([...rooms.get('mute-room')!.peers.values()].find(p => p.name === 'Alice')?.micOn).toBe(true)
+  })
+
+  test('ignores malformed state and cannot change another sender’s state', () => {
+    const alice = fakeWs()
+    const bob = fakeWs()
+    join(alice, 'mute-validation', 'Alice')
+    join(bob, 'mute-validation', 'Bob')
+    handleMessage(alice, JSON.stringify({ t: 'media_state', payload: { micOn: 'false' } }))
+    expect([...rooms.get('mute-validation')!.peers.values()].every(p => p.micOn)).toBe(true)
+    const bobId = [...rooms.get('mute-validation')!.peers.values()].find(p => p.name === 'Bob')!.id
+    handleMessage(alice, JSON.stringify({ t: 'media_state', payload: { id: bobId, micOn: false } }))
+    expect(rooms.get('mute-validation')!.peers.get(bobId)?.micOn).toBe(true)
+  })
+})

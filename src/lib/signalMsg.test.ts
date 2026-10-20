@@ -35,7 +35,7 @@ describe('parseSignalMsg', () => {
       kind: 'ok',
       msg: {
         t: 'room_state',
-        payload: { peers: [{ id: 'p1', name: 'A', isHost: true, sharing: true }], chat: [] },
+        payload: { peers: [{ id: 'p1', name: 'A', isHost: true, sharing: true, micOn: true }], chat: [] },
       },
     })
   })
@@ -47,7 +47,15 @@ describe('parseSignalMsg', () => {
     })
     expect(parsed).toEqual({
       kind: 'ok',
-      msg: { t: 'peer_joined', payload: { id: 'p2', name: 'B', isHost: false, sharing: false } },
+      msg: { t: 'peer_joined', payload: { id: 'p2', name: 'B', isHost: false, sharing: false, micOn: true } },
     })
   })
+})
+
+test('preserves explicit remote mute status', () => {
+  const parsed = parseSignalMsg({
+    t: 'room_state',
+    payload: { peers: [{ id: 'p1', name: 'A', isHost: true, micOn: false }], chat: [] },
+  })
+  expect(parsed.kind === 'ok' && parsed.msg.t === 'room_state' && parsed.msg.payload.peers[0]?.micOn).toBe(false)
 })
