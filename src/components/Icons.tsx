@@ -120,12 +120,12 @@ export function IconShot(props: IconProps) {
   )
 }
 
-export function IconGear(props: IconProps) {
+export function IconDevices(props: IconProps) {
   return (
     <svg {...svgProps(props)}>
-      <path d="M4 7h16M4 17h16" />
-      <circle cx="9" cy="7" r="3" fill="var(--bg)" />
-      <circle cx="15" cy="17" r="3" fill="var(--bg)" />
+      <path d="M4 13v-2a8 8 0 0 1 16 0v2M20 16v2a3 3 0 0 1-3 3h-3" />
+      <rect x="3" y="11" width="4" height="7" rx="2" />
+      <rect x="17" y="11" width="4" height="7" rx="2" />
     </svg>
   )
 }
@@ -206,8 +206,7 @@ export function IconLeave(props: IconProps) {
 export function IconEnd(props: IconProps) {
   return (
     <svg {...svgProps(props)}>
-      <path d="M8 9.5c2.5-2 5.5-2 8 0M7 14.5c3.4-3 6.6-3 10 0" />
-      <circle cx="12" cy="17.5" r="1.2" fill="currentColor" stroke="none" />
+      <path d="M3 11a16 16 0 0 1 18 0 2 2 0 0 1 1 1.7V16a1 1 0 0 1-1.3 1l-4-1.2a1 1 0 0 1-.7-1v-2a13 13 0 0 0-8 0v2a1 1 0 0 1-.7 1L3.3 17A1 1 0 0 1 2 16v-3.3A2 2 0 0 1 3 11Z" />
     </svg>
   )
 }

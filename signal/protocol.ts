@@ -181,6 +181,11 @@ export function handleMessage(ws: ServerWebSocket<unknown>, raw: string | Buffer
   }
   const { t, payload } = msg;
 
+  if (t === "ping") {
+    ws.send(pack("pong", {}));
+    return;
+  }
+
   if (t === "join") {
     const join = asJoin(payload);
     if (!join) {
@@ -246,6 +251,12 @@ export function handleMessage(ws: ServerWebSocket<unknown>, raw: string | Buffer
   const room = findRoomOfPeer(peerId);
   if (!room) {
     ws.send(pack("error", { message: "room not found" }));
+    return;
+  }
+
+  if (t === "ice_restart") {
+    if (!isRecord(payload) || typeof payload.target !== "string") return;
+    room.peers.get(payload.target)?.ws.send(pack("ice_restart", { from: peerId }));
     return;
   }
 

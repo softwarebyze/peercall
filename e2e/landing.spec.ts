@@ -8,6 +8,8 @@ test.describe('landing', () => {
     await expect(page.getByRole('button', { name: 'Start call' })).toBeEnabled()
     await expect(page.getByRole('button', { name: 'Join', exact: true })).toBeEnabled()
     await expect(page.getByTestId('join-link-input')).toBeVisible()
+    await expect(page.getByText('PeerCall v0.2', { exact: true })).toBeVisible()
+    await expect(page.getByText('Waiting for others', { exact: true })).toHaveCount(0)
     await expect(page.getByRole('button', { name: 'Scan QR code to join' })).toBeVisible()
   })
 

@@ -146,8 +146,7 @@
   line-height: 1.45;
 }
 
-/* In flow (not fixed) so it can never cover the product mock; `margin-top:auto`
-   pins it to the bottom of the viewport when the page is shorter than 100vh.
+/* `margin-top:auto` pins it to the bottom of the viewport when the page is shorter than 100vh.
    Negative side margins let it bleed to both edges despite `.page` padding. */
 .footer {
   align-self: stretch;
@@ -169,63 +168,8 @@
 .footerLink:hover {
   opacity: 0.8;
 }
-
-.productFrame {
-  width: 100%;
-  border: 1px solid var(--line);
-  background: var(--bg-elev);
-  overflow: hidden;
-  pointer-events: none;
-}
-.productBar {
-  display: flex;
-  align-items: center;
-  gap: 0.45rem;
-  padding: 0.45rem 0.7rem;
-  border-bottom: 1px solid var(--line);
-  font-family: var(--font-chrome);
-  font-size: 0.68rem;
-  color: var(--text-dim);
-}
-.productTiles {
-  display: grid;
-  grid-template-columns: 1.15fr 0.85fr;
-  min-height: 8.5rem;
-}
-.productYou,
-.productWait {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 0.35rem;
-}
-.productYou {
-  border-right: 1px solid var(--line);
-}
-.productWait {
-  color: var(--text-dim);
-  font-size: 0.8rem;
-}
-.productAvatar {
-  width: 2.4rem;
-  height: 2.4rem;
-  border: 1px solid var(--accent-dim);
-  color: var(--accent);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-family: var(--font-chrome);
-  font-weight: 700;
-}
-
 @media (max-width: 540px) {
   .features { grid-template-columns: 1fr; }
   .startRow { flex-wrap: wrap; }
   .nameInput { flex: 1 1 100%; }
-  .productTiles { grid-template-columns: 1fr; min-height: 7rem; }
-  .productYou { border-right: none; border-bottom: 1px solid var(--line); }
 }
-
-.previewCaption { display: block; padding: 0.5rem 0.75rem; font-size: 0.75rem; color: var(--text-dim); border-bottom: 1px solid var(--line); }
-.productFrame { pointer-events: none; user-select: none; }

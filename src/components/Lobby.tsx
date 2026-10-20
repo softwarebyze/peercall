@@ -5,7 +5,7 @@ import { useMediaDevices } from '../hooks/useMediaDevices'
 import { useMicLevel } from '../hooks/useMicLevel'
 import { VideoTile } from './VideoTile'
 import { DeviceModal } from './DeviceModal'
-import { IconCamera, IconCameraOff, IconGear, IconMic, IconMicOff, IconWarn } from './Icons'
+import { IconCamera, IconCameraOff, IconDevices, IconMic, IconMicOff, IconWarn } from './Icons'
 import { activeDeviceId, labelFor, supportsSinkId, type MediaKind } from '../lib/devices'
 import styles from './Room.module.css'
 
@@ -200,7 +200,8 @@ export function Lobby(args: {
               onClick={() => setDevicesOpen(true)}
               title="Device settings"
             >
-              <IconGear />
+              <IconDevices />
+              <span>Devices</span>
             </button>
           </div>
           <p className={styles.deviceHint}>

@@ -215,3 +215,26 @@ describe('handleMessage media_state', () => {
     expect(rooms.get('mute-validation')!.peers.get(bobId)?.micOn).toBe(true)
   })
 })
+
+test('answers signaling keepalive without requiring room membership', () => {
+  const ws = fakeWs()
+  handleMessage(ws, JSON.stringify({ t: 'ping', payload: {} }))
+  expect(ws.sent).toEqual([{ t: 'pong', payload: {} }])
+})
+
+test('ICE restart requests stay within the sender’s room and use the sender’s id', () => {
+  const alice = fakeWs()
+  const bob = fakeWs()
+  const outsider = fakeWs()
+  join(alice, 'restart-room', 'Alice')
+  join(bob, 'restart-room', 'Bob')
+  join(outsider, 'other-room', 'Outsider')
+  const members = [...rooms.get('restart-room')!.peers.values()]
+  const aliceId = members.find(p => p.name === 'Alice')!.id
+  const bobId = members.find(p => p.name === 'Bob')!.id
+  handleMessage(alice, JSON.stringify({ t: 'ice_restart', payload: { target: bobId, from: 'forged' } }))
+  expect(bob.sent.at(-1)).toEqual({ t: 'ice_restart', payload: { from: aliceId } })
+  const before = bob.sent.length
+  handleMessage(outsider, JSON.stringify({ t: 'ice_restart', payload: { target: bobId } }))
+  expect(bob.sent.length).toBe(before)
+})

@@ -4,6 +4,7 @@ import { QrScanner } from '../components/QrScanner'
 import { IconChat, IconLock, IconMesh, IconQr, IconRecord } from '../components/Icons'
 import { parseRoomJoin } from '../lib/roomUrl'
 import { generateRoomId } from '../lib/roomId'
+import { version } from '../../package.json'
 import styles from './index.module.css'
 
 export const Route = createFileRoute('/')({
@@ -185,24 +186,6 @@ function Landing() {
           )}
         </form>
 
-        <div className={styles.productFrame} aria-hidden>
-          <span className={styles.previewCaption}>A look inside a call</span>
-          <div className={styles.productBar}>
-            <div className="pulse-dot" />
-            <span className="accent">PeerCall</span>
-            <span>·</span>
-            <span>brave-otter-pine</span>
-            <span style={{ marginLeft: 'auto' }}>Copy invite</span>
-          </div>
-          <div className={styles.productTiles}>
-            <div className={styles.productYou}>
-              <span className={styles.productAvatar}>Y</span>
-              <span>You</span>
-            </div>
-            <div className={styles.productWait}>Waiting for others</div>
-          </div>
-        </div>
-
         {showScanner && (
           <QrScanner onScan={goToRoom} onClose={() => setShowScanner(false)} />
         )}
@@ -248,7 +231,7 @@ function Landing() {
       </div>
 
       <footer className={styles.footer}>
-        <span className="dim">PeerCall v0.1</span>
+        <span className="dim">PeerCall v{version.replace(/\.0$/, '')}</span>
         <span className="dim">·</span>
         <a className={styles.footerLink} href="https://github.com/softwarebyze/peercall" target="_blank" rel="noopener">
           Source

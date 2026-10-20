@@ -6,7 +6,7 @@ import {
   IconCameraOff,
   IconChat,
   IconEnd,
-  IconGear,
+  IconDevices,
   IconLeave,
   IconMic,
   IconMicOff,
@@ -167,7 +167,8 @@ export function ControlsBar(props: ControlsBarProps) {
           title="Device settings"
           aria-expanded={devicesOpen}
         >
-          <IconGear />
+          <IconDevices />
+          <span>Devices</span>
         </button>
       </div>
 

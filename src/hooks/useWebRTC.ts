@@ -90,7 +90,8 @@ export function useWebRTC(opts: {
   const connectionStatesRef = useRef<Map<string, RTCPeerConnectionState>>(new Map())
   const pendingCandidatesRef = useRef<Map<string, RTCIceCandidateInit[]>>(new Map())
   const pendingOffersRef = useRef<Map<string, RTCSessionDescriptionInit>>(new Map())
-  const lastFailTimeRef = useRef<Map<string, number>>(new Map())
+  const recoveryTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map())
+  const recoveryAttemptsRef = useRef<Map<string, number>>(new Map())
   const localStreamRef = useRef<MediaStream | null>(null)
   const preferredCameraRef = useRef<string | null>(null)
   const [cameraFallbackAvailable, setCameraFallbackAvailable] = useState(false)
@@ -162,9 +163,20 @@ export function useWebRTC(opts: {
     [refreshRemote]
   )
 
+  const clearRecovery = useCallback((peerId: string) => {
+    clearTimeout(recoveryTimersRef.current.get(peerId))
+    recoveryTimersRef.current.delete(peerId)
+    recoveryAttemptsRef.current.delete(peerId)
+  }, [])
+
   const cleanupPC = useCallback((peerId: string) => {
+    clearRecovery(peerId)
     const pc = pcsRef.current.get(peerId)
     if (pc) {
+      pc.onconnectionstatechange = null
+      pc.oniceconnectionstatechange = null
+      pc.ontrack = null
+      pc.onicecandidate = null
       pc.close()
       pcsRef.current.delete(peerId)
     }
@@ -172,7 +184,7 @@ export function useWebRTC(opts: {
     connectionStatesRef.current.delete(peerId)
     pendingCandidatesRef.current.delete(peerId)
     pendingOffersRef.current.delete(peerId)
-  }, [])
+  }, [clearRecovery])
 
   // If the signaling connection dropped and we rejoined, we get a new id and
   // everyone else saw us leave. Tear down stale connections so the mesh
@@ -186,7 +198,7 @@ export function useWebRTC(opts: {
     if (myId) prevMyIdRef.current = myId
   }, [myId, cleanupPC, refreshRemote])
 
-  const reconnectPeerRef = useRef<(peerId: string) => void>(() => {})
+  const reconnectPeerRef = useRef<(peerId: string, requested?: boolean) => void>(() => {})
 
   const createPC = useCallback(
     (peerId: string, initiator: boolean) => {
@@ -231,16 +243,24 @@ export function useWebRTC(opts: {
       }
 
       pc.onconnectionstatechange = () => {
+        if (pcsRef.current.get(peerId) !== pc) return
         const state = pc.connectionState
         updateConnectionState(peerId, state)
-        if (state === 'failed') {
-          const now = Date.now()
-          const last = lastFailTimeRef.current.get(peerId) ?? 0
-          if (now - last > 5000) {
-            lastFailTimeRef.current.set(peerId, now)
-            cleanupPC(peerId)
+        if (state === 'connected') {
+          clearRecovery(peerId)
+        } else if (state === 'failed') {
+          reconnectPeerRef.current(peerId)
+        } else if (state === 'disconnected' && !recoveryTimersRef.current.has(peerId)) {
+          // Wi-Fi handoffs can recover on their own; don't renegotiate every blip.
+          recoveryTimersRef.current.set(peerId, setTimeout(() => {
+            recoveryTimersRef.current.delete(peerId)
             reconnectPeerRef.current(peerId)
-          }
+          }, 5000))
+        }
+      }
+      pc.oniceconnectionstatechange = () => {
+        if (pcsRef.current.get(peerId) === pc && pc.iceConnectionState === 'failed') {
+          reconnectPeerRef.current(peerId)
         }
       }
 
@@ -257,7 +277,7 @@ export function useWebRTC(opts: {
 
       return pc
     },
-    [sendSignal, updateConnectionState, refreshRemote, cleanupPC]
+    [sendSignal, updateConnectionState, refreshRemote, clearRecovery]
   )
 
   const flushPendingCandidates = useCallback((peerId: string) => {
@@ -271,17 +291,44 @@ export function useWebRTC(opts: {
   }, [])
 
   const reconnectPeer = useCallback(
-    (peerId: string) => {
-      if (!localStreamRef.current && !allowNoMediaRef.current) return
-      if (!peersRef.current.some((p) => p.id === peerId)) return
-      if (pcsRef.current.has(peerId)) return
-      // Only the initiator sends a fresh offer; the non-initiator waits for it.
-      // Both sides' connections usually fail together, so the initiator's new
-      // offer re-establishes the pair.
-      const initiator = (myIdRef.current ?? '') < peerId
-      createPC(peerId, initiator)
+    (peerId: string, requested = false) => {
+      if (!aliveRef.current || !myIdRef.current) return
+      if (!peersRef.current.some(p => p.id === peerId)) return
+      const pc = pcsRef.current.get(peerId)
+      if (!pc || pc.signalingState === 'closed') return
+      if (pc.connectionState === 'connected' && !requested) {
+        clearRecovery(peerId)
+        return
+      }
+      // One offerer per pair avoids colliding restart offers. The other side
+      // can request recovery even when only its own transport has failed.
+      if (recoveryTimersRef.current.has(peerId)) return
+      const attempt = recoveryAttemptsRef.current.get(peerId) ?? 0
+      recoveryAttemptsRef.current.set(peerId, attempt + 1)
+      const delay = Math.min(10000 * 2 ** Math.min(attempt, 2), 30000)
+      recoveryTimersRef.current.set(peerId, setTimeout(() => {
+        recoveryTimersRef.current.delete(peerId)
+        reconnectPeerRef.current(peerId)
+      }, delay))
+      if (myIdRef.current > peerId) {
+        sendSignal('ice_restart', { target: peerId })
+        return
+      }
+      if (pc.signalingState !== 'stable') return
+      // Keep the same connection, senders and playback elements while finding
+      // a new network path. Closing the PC first interrupts otherwise-live media.
+      void pc.createOffer({ iceRestart: true })
+        .then(offer => {
+          if (pcsRef.current.get(peerId) === pc && pc.signalingState === 'stable') return pc.setLocalDescription(offer)
+        })
+        .then(() => {
+          if (pcsRef.current.get(peerId) === pc && pc.signalingState === 'have-local-offer' && pc.localDescription) {
+            sendSignal('offer', { target: peerId, data: pc.localDescription.toJSON() })
+          }
+        })
+        .catch(() => { /* The scheduled retry remains active until connected. */ })
     },
-    [createPC]
+    [sendSignal, clearRecovery]
   )
   useEffect(() => {
     reconnectPeerRef.current = reconnectPeer
@@ -517,6 +564,8 @@ export function useWebRTC(opts: {
           pendingCandidatesRef.current.set(msg.payload.from, pending)
         }
       }
+
+      if (msg.t === 'ice_restart') reconnectPeerRef.current(msg.payload.from, true)
 
       if (msg.t === 'peer_left') {
         cleanupPC(msg.payload.id)

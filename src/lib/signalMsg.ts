@@ -2,6 +2,8 @@ export type PeerInfo = { id: string; name: string; isHost: boolean; sharing: boo
 export type ChatEntry = { id: string; from: string; name: string; text: string; ts: number }
 
 export type SignalMsg =
+  | { t: 'pong'; payload: Record<string, never> }
+  | { t: 'ice_restart'; payload: { from: string } }
   | { t: 'joined'; payload: { id: string; roomId: string; isHost: boolean } }
   | { t: 'room_state'; payload: { peers: PeerInfo[]; chat: ChatEntry[] } }
   | { t: 'peer_joined'; payload: { id: string; name: string; isHost: boolean } }
@@ -90,6 +92,12 @@ export function parseSignalMsg(data: unknown): ParsedSignal {
   const payload = data.payload
 
   switch (t) {
+    case 'pong':
+      return { kind: 'ok', msg: { t: 'pong', payload: {} } }
+    case 'ice_restart': {
+      if (!isRecord(payload) || typeof payload.from !== 'string') return { kind: 'invalid' }
+      return { kind: 'ok', msg: { t: 'ice_restart', payload: { from: payload.from } } }
+    }
     case 'joined': {
       if (!isRecord(payload)) return { kind: 'invalid' }
       const id = asString(payload.id)

@@ -3,7 +3,7 @@
 The merge candidate fixes capture cleanup, repeated screen-share camera acquisition,
 focus transitions that remounted video/audio, cropped camera display, screenshot
 stretching, and device/copy/input polish. It adds per-participant audio activity and
-an invitation-specific social image. It does not change the preview deployment.
+an invitation-specific social image.
 
 ## Next feature work
 
@@ -20,8 +20,7 @@ an invitation-specific social image. It does not change the preview deployment.
   display name or `?host=1`. Keep explicit Leave and temporary network loss distinct.
 - **Elapsed call time:** send a room start timestamp from signaling and render a
   shared elapsed clock, rather than separate per-client timers that disagree.
-- **Home preview:** now explicitly labelled as a preview. A genuinely interactive
-  demo can be considered separately.
+- **Home preview:** removed from v0.2 because its fake controls were confusing.
 
 ## Browser follow-through
 
@@ -63,3 +62,24 @@ background/foreground, browser Stop sharing, repeated shares, focus/unfocus duri
 remote speech, Leave and End for everyone. Confirm capture indicators go out after
 leaving when no other tab/app owns the camera. Test multi-peer active-speaker
 indicators without duplicate audio playback.
+
+## v0.2 connection recovery
+
+Signaling sends application keepalives every 20 seconds and reconnects after an
+unresponsive visible session. Resuming a background tab gets a fresh response
+window. Brief media disconnects get a five-second grace period; persistent drops
+restart ICE on the same peer connection, with one designated offerer and bounded
+retry frequency, preserving capture and playback objects.
+
+Browser tests cover both sides requesting recovery, unchanged connection/media
+identity, and keepalive responses across a simulated 140-second quiet period.
+These are controlled tests, not a reproduction of the reported Wi-Fi problems.
+[MDN ICE restarts](https://developer.mozilla.org/en-US/docs/Web/API/RTCPeerConnection/restartIce)
+allow refreshing network paths while retaining existing media.
+
+Both production and the PR preview currently return only STUN servers from
+`/config`. Configure a TURN provider using the existing `TURN_*` or `METERED_*`
+settings before expecting reliable fallback on networks that block direct media.
+No provider credentials or paid service were provisioned by this change. A TURN
+relay helps connectivity; it cannot restore a disconnected Wi-Fi link or create
+additional upload bandwidth for an eight-person peer mesh.

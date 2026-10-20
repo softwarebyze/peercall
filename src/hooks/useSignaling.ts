@@ -46,6 +46,24 @@ export function useSignaling(opts: {
       if (closed) return
       const ws = new WebSocket(getSignalUrl())
       wsRef.current = ws
+      let lastFrameAt = Date.now()
+      let heartbeat: ReturnType<typeof setInterval> | undefined
+      const probe = () => {
+        if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ t: 'ping', payload: {} }))
+      }
+      const resumed = () => {
+        if (document.visibilityState !== 'visible') return
+        // Background tabs can suspend timers; give a resumed page a fresh
+        // response window instead of treating that suspension as a dead link.
+        lastFrameAt = Date.now()
+        probe()
+      }
+      const stopHeartbeat = () => {
+        clearInterval(heartbeat)
+        document.removeEventListener('visibilitychange', resumed)
+        window.removeEventListener('online', resumed)
+      }
+      ws.addEventListener('close', stopHeartbeat, { once: true })
 
       if (!everConnected && attempt === 0) {
         wakingTimer = setTimeout(() => {
@@ -60,9 +78,19 @@ export function useSignaling(opts: {
         }
         attempt = 0
         ws.send(JSON.stringify({ t: 'join', payload: { roomId, name, isHost } }))
+        lastFrameAt = Date.now()
+        document.addEventListener('visibilitychange', resumed)
+        window.addEventListener('online', resumed)
+        heartbeat = setInterval(() => {
+          if (closed || wsRef.current !== ws) { stopHeartbeat(); return }
+          if (document.visibilityState !== 'visible') return
+          if (Date.now() - lastFrameAt > 60000) { ws.close(); return }
+          probe()
+        }, 20000)
       }
       ws.onmessage = (ev) => {
         if (closed) return
+        lastFrameAt = Date.now()
         let parsedJson: unknown
         try {
           parsedJson = JSON.parse(typeof ev.data === 'string' ? ev.data : String(ev.data))
@@ -72,6 +100,7 @@ export function useSignaling(opts: {
         const parsed = parseSignalMsg(parsedJson)
         if (parsed.kind === 'invalid') return
         const msg = parsed.msg
+        if (msg.t === 'pong') return
         if (msg.t === 'joined') {
           everConnected = true
           if (wakingTimer) clearTimeout(wakingTimer)
