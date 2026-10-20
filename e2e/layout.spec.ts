@@ -75,6 +75,12 @@ test.describe('call layout', () => {
     const strip = host.locator('[data-layout="spotlight"]')
     await expect(strip.locator('[data-variant="strip"]')).toHaveCount(2)
     await expect(strip.getByLabel('Focus Alice')).toBeVisible()
+    const thumbnails = await strip.locator('[data-variant="strip"]').evaluateAll(els =>
+      els.map(el => { const r = el.getBoundingClientRect(); return { x: r.x, width: r.width } }),
+    )
+    expect(thumbnails.every(t => t.width <= 169)).toBe(true)
+    expect(Math.abs(thumbnails[1].x - thumbnails[0].x) - thumbnails[0].width).toBeCloseTo(4, 0)
+
 
     await host.getByLabel('Stop focusing Bob').click()
     await expect(host.locator('[data-layout="grid-2x2"]')).toBeVisible()

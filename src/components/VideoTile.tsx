@@ -1,4 +1,4 @@
-import { useRef, useEffect, useState } from 'react'
+import { useRef, useEffect, useState, type CSSProperties } from 'react'
 import { useMicLevel } from '../hooks/useMicLevel'
 import styles from './Room.module.css'
 import { IconMicOff, IconScreen, IconFocus, IconUnfocus } from './Icons'
@@ -25,6 +25,8 @@ interface VideoTileProps {
   /** CSS `grid-column`, so a short last row can be centered. */
   gridColumn?: string
   gridRow?: string
+  stripOffset?: number
+  stripCount?: number
 }
 
 const stateLabel: Partial<Record<RTCPeerConnectionState, string>> = {
@@ -77,6 +79,8 @@ export function VideoTile({
   onToggleFocus,
   gridColumn,
   gridRow,
+  stripOffset,
+  stripCount,
 }: VideoTileProps) {
   const videoRef = useRef<HTMLVideoElement>(null)
   const streamRef = useRef<MediaStream | null>(null)
@@ -117,7 +121,7 @@ export function VideoTile({
       data-variant={variant}
       data-sharing={sharing ? 'true' : undefined}
       data-focused={focused ? 'true' : undefined}
-      style={{ gridColumn, gridRow }}
+      style={{ gridColumn, gridRow, '--strip-offset': stripOffset, '--strip-count': stripCount } as CSSProperties}
     >
       <video
         ref={videoRef}

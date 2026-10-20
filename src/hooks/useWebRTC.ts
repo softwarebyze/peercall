@@ -66,6 +66,8 @@ export interface WebRTCState {
   cameraDeviceId: string | null
   micDeviceId: string | null
   retryMedia: () => void
+  cameraFallbackAvailable: boolean
+  useDefaultCamera: () => void
   joinAudioOnly: () => void
   joinListenOnly: () => void
   hasVideo: boolean
@@ -90,6 +92,8 @@ export function useWebRTC(opts: {
   const pendingOffersRef = useRef<Map<string, RTCSessionDescriptionInit>>(new Map())
   const lastFailTimeRef = useRef<Map<string, number>>(new Map())
   const localStreamRef = useRef<MediaStream | null>(null)
+  const preferredCameraRef = useRef<string | null>(null)
+  const [cameraFallbackAvailable, setCameraFallbackAvailable] = useState(false)
   const cameraBeforeShareRef = useRef<MediaStreamTrack | null>(null)
   const sharingRef = useRef(false)
   const aliveRef = useRef(true)
@@ -350,7 +354,10 @@ export function useWebRTC(opts: {
     if (previous && previous !== stream) {
       previous.getTracks().filter((track) => !stream.getTracks().includes(track)).forEach((track) => track.stop())
     }
+    const cameraId = stream.getVideoTracks()[0]?.getSettings().deviceId
+    if (cameraId) preferredCameraRef.current = cameraId
     localStreamRef.current = stream
+    setCameraFallbackAvailable(false)
     setLocalStream(stream)
     setMediaError(null)
   }, [])
@@ -361,9 +368,13 @@ export function useWebRTC(opts: {
       shouldCommit: () => boolean = () => true,
     ) => {
       const request = ++acquisitionRef.current
+      setCameraFallbackAvailable(false)
       const ownsRequest = () => aliveRef.current && request === acquisitionRef.current && shouldCommit()
       try {
-        const stream = await navigator.mediaDevices.getUserMedia(constraints)
+        const stream = await navigator.mediaDevices.getUserMedia({
+          ...constraints,
+          video: constraints.video && preferredCameraRef.current ? { deviceId: { exact: preferredCameraRef.current } } : constraints.video,
+        })
         // The caller that kicked this off may have been torn down while
         // getUserMedia was pending — unmount, or a newer acquisition/retry.
         // Only the still-owning caller may commit; anyone else stops what it
@@ -385,6 +396,11 @@ export function useWebRTC(opts: {
           typeof err === 'object' && err !== null && 'name' in err && typeof err.name === 'string'
             ? err.name
             : ''
+        if (constraints.video && preferredCameraRef.current && (name === 'NotFoundError' || name === 'OverconstrainedError')) {
+          setCameraFallbackAvailable(true)
+          setMediaError('The selected camera is unavailable. Reconnect it and retry, or choose Use default camera.')
+          return
+        }
         const msg =
           name === 'NotAllowedError'
             ? 'Camera/mic access denied. Allow permissions, then retry.'
@@ -610,6 +626,8 @@ export function useWebRTC(opts: {
     async (args: { kind: 'videoinput' | 'audioinput'; deviceId: string }) => {
       const trackKind = args.kind === 'videoinput' ? 'video' : 'audio'
       const ownedLocal = localStreamRef.current
+      if (trackKind === 'video' && args.deviceId) preferredCameraRef.current = args.deviceId
+      setCameraFallbackAvailable(false)
       try {
         const stream = await navigator.mediaDevices.getUserMedia({
           [trackKind === 'video' ? 'video' : 'audio']: args.deviceId ? { deviceId: { exact: args.deviceId } } : true,
@@ -623,11 +641,13 @@ export function useWebRTC(opts: {
           stream.getTracks().forEach((t) => t.stop())
           return
         }
+        if (trackKind === 'video') preferredCameraRef.current = newTrack.getSettings().deviceId ?? args.deviceId ?? null
         newTrack.enabled = trackKind === 'video' ? cameraOnRef.current : micOnRef.current
 
         if (trackKind === 'video' && sharingRef.current) {
           oldTrack?.stop()
           cameraBeforeShareRef.current = newTrack
+          setMediaError(null)
           setLocalStream(new MediaStream(local.getTracks()))
           return
         }
@@ -645,7 +665,14 @@ export function useWebRTC(opts: {
         setMediaError(null)
       } catch (error) {
         if (!aliveRef.current || localStreamRef.current !== ownedLocal) return
-        const denied = error instanceof DOMException && error.name === 'NotAllowedError'
+        const name = error instanceof Error ? error.name : ''
+        const missingCamera = trackKind === 'video' && !!args.deviceId && (name === 'NotFoundError' || name === 'OverconstrainedError')
+        setCameraFallbackAvailable(missingCamera)
+        if (missingCamera) {
+          setMediaError('The selected camera is unavailable. Reconnect it and retry, or choose Use default camera.')
+          return
+        }
+        const denied = name === 'NotAllowedError'
         setMediaError(denied
           ? 'Camera or microphone permission is blocked. Allow access in your browser’s site settings, then retry here.'
           : 'Could not open that device. Check it is connected and close other apps using it, then retry here.')
@@ -687,10 +714,12 @@ export function useWebRTC(opts: {
     mediaError,
     cameraDeviceId: (cameraBeforeShareRef.current ?? localStream?.getVideoTracks()[0])?.getSettings().deviceId ?? null,
     micDeviceId: localStream?.getAudioTracks()[0]?.getSettings().deviceId ?? null,
+    cameraFallbackAvailable,
+    useDefaultCamera: () => { void switchDevice({ kind: 'videoinput', deviceId: '' }) },
     retryMedia: () => {
       setAllowNoMedia(false)
       if (localStreamRef.current?.getAudioTracks().some(t => t.readyState === 'live')) {
-        void switchDevice({ kind: 'videoinput', deviceId: '' })
+        void switchDevice({ kind: 'videoinput', deviceId: preferredCameraRef.current ?? '' })
       } else {
         void acquireMedia({ video: true, audio: true })
       }

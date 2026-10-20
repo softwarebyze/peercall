@@ -10,8 +10,6 @@ export function DeviceModal(args: {
   micDeviceId: string | null
   speakerDeviceId: string | null
   showSpeaker: boolean
-  /** Set when the call publishes no camera, so switching one cannot work. */
-  cameraUnavailable?: string
   onSwitch: (args: { kind: MediaKind; deviceId: string }) => void
   onClose: () => void
 }) {
@@ -47,7 +45,6 @@ export function DeviceModal(args: {
             title="Camera"
             devices={args.devices.cameras}
             activeId={args.cameraDeviceId}
-            disabledReason={args.cameraUnavailable}
             onSelect={(deviceId) => args.onSwitch({ kind: 'camera', deviceId })}
           />
           <DeviceGroup
@@ -75,16 +72,12 @@ function DeviceGroup(args: {
   title: string
   devices: DeviceEntry[]
   activeId: string | null
-  disabledReason?: string
   onSelect: (deviceId: string) => void
 }) {
   return (
     <div className={styles.deviceGroup} data-testid={`devices-${args.title.toLowerCase()}`}>
       <span className={styles.deviceGroupTitle}>{args.title}</span>
       {args.devices.length === 0 && <span className="dim">None listed</span>}
-      {args.devices.length > 0 && args.disabledReason && (
-        <span className={styles.deviceUnavailable}>{args.disabledReason}</span>
-      )}
       {args.devices.map((d) => {
         const selected = d.deviceId === args.activeId
         return (
@@ -93,7 +86,6 @@ function DeviceGroup(args: {
             type="button"
             className={selected ? styles.deviceSelected : styles.deviceChoice}
             aria-pressed={selected}
-            disabled={args.disabledReason !== undefined}
             onClick={() => args.onSelect(d.deviceId)}
           >
             <span className={`pulse-dot ${selected ? '' : styles.deviceDotOff}`} aria-hidden />

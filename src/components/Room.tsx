@@ -307,6 +307,8 @@ function RoomSession(props: {
         focused={pinnedId === p.id}
         gridColumn={alone ? '1' : slot.column}
         gridRow={alone ? '1' : slot.row}
+        stripOffset={slot.stripOffset}
+        stripCount={slot.stripCount}
         onToggleFocus={() => setPinnedId(current => current === p.id ? null : p.id)}
       />
     )
@@ -420,6 +422,9 @@ function RoomSession(props: {
         <div className={styles.mediaError}>
           <IconWarn size={16} />
           <span>{rtc.mediaError}</span>
+          {rtc.cameraFallbackAvailable && (
+            <button className="btn-ghost" type="button" onClick={rtc.useDefaultCamera}>Use default camera</button>
+          )}
           <button className="btn-ghost" type="button" onClick={rtc.retryMedia}>
             Retry camera
           </button>

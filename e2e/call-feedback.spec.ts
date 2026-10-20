@@ -104,9 +104,56 @@ test('join links have invite metadata and mobile fields do not trigger Safari fo
   await page.goto(`/room/${roomId()}`)
   await expect(page.locator('meta[property="og:title"]')).toHaveAttribute('content', /invited/)
   await expect(page.locator('meta[property="og:image"]')).toHaveAttribute('content', /og-join\.png/)
+  const origin = new URL(page.url()).origin
+  await expect(page.locator('meta[property="og:image"]')).toHaveAttribute('content', `${origin}/og-join.png`)
+  await expect(page.locator('link[rel="canonical"]')).toHaveAttribute('href', page.url())
+  // Social crawlers need the correct URLs in server HTML, before hydration.
+  const html = await (await page.request.get(page.url())).text()
+  expect(html).toContain(`${origin}/og-join.png`)
+  expect(html).not.toContain('https://peercall.fly.dev/og-join.png')
+
   await page.setViewportSize({ width: 390, height: 844 })
   await page.goto('/')
   const fontSizes = await page.locator('input').evaluateAll(inputs => inputs.map(el => parseFloat(getComputedStyle(el).fontSize)))
   expect(fontSizes.every(size => size >= 16)).toBe(true)
   await expect(page.locator('body')).not.toContainText('DTLS-SRTP')
+})
+
+test('retry targets the selected camera and changing to default requires a click', async ({ browser }) => {
+  const alice = await newPeer(browser, 'Alice')
+  await alice.page.addInitScript(() => {
+    const original = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices)
+    Object.assign(window, { __cameraRequests: [] as MediaTrackConstraints[], __cameraMissing: false })
+    navigator.mediaDevices.getUserMedia = c => {
+      const state = window as unknown as {__cameraRequests: (MediaTrackConstraints | boolean)[]; __cameraMissing: boolean}
+      if (c?.video) {
+        state.__cameraRequests.push(c.video)
+        if (state.__cameraMissing && typeof c.video === 'object' && c.video.deviceId) {
+          return Promise.reject(new DOMException('Selected camera unplugged', 'NotFoundError'))
+        }
+      }
+      return original(c)
+    }
+  })
+  await alice.page.goto(`/room/${roomId()}?host=1`)
+  await passJoinGate(alice.page)
+  await waitForPlayingVideos(alice.page, 1)
+  const selectedId = await alice.page.evaluate(() => {
+    const track = (document.querySelector('video')!.srcObject as MediaStream).getVideoTracks()[0]
+    const id = track.getSettings().deviceId
+    Object.assign(window, {__cameraMissing: true})
+    track.stop()
+    track.dispatchEvent(new Event('ended'))
+    return id
+  })
+  await alice.page.getByRole('button', { name: 'Retry camera', exact: true }).click()
+  await expect(alice.page.getByRole('button', { name: 'Use default camera', exact: true })).toBeVisible()
+  const requests = await alice.page.evaluate(() => (window as unknown as {__cameraRequests: unknown[]}).__cameraRequests)
+  expect(requests).toHaveLength(2)
+  expect(requests[1]).toEqual({deviceId: {exact: selectedId}})
+  await alice.page.getByRole('button', { name: 'Use default camera', exact: true }).click()
+  await expect(alice.page.getByRole('button', { name: 'Use default camera', exact: true })).toHaveCount(0)
+  await waitForPlayingVideos(alice.page, 1)
+  expect(await alice.page.evaluate(() => (window as unknown as {__cameraRequests: unknown[]}).__cameraRequests.at(-1))).toBe(true)
+  await alice.ctx.close()
 })
