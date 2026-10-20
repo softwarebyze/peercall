@@ -35,8 +35,16 @@ export function useLocalMedia() {
   const [state, setState] = useState<LocalMediaState>({ kind: 'pending' })
   const streamRef = useRef<MediaStream | null>(null)
   const handedOff = useRef(false)
+  // getUserMedia can resolve after the lobby has unmounted (Back pressed while
+  // the permission prompt was up). Cleanup only stops the stream it already
+  // has, so without this the late stream's tracks stay live forever.
+  const disposed = useRef(false)
 
   const applyStream = (stream: MediaStream) => {
+    if (disposed.current) {
+      stopStream(stream)
+      return
+    }
     stopStream(streamRef.current)
     streamRef.current = stream
     setState({
@@ -62,12 +70,14 @@ export function useLocalMedia() {
           applyStream(audioOnly)
           return
         } catch (audioErr) {
+          if (disposed.current) return
           stopStream(streamRef.current)
           streamRef.current = null
           setState({ kind: 'blocked', ...classify(audioErr) })
           return
         }
       }
+      if (disposed.current) return
       stopStream(streamRef.current)
       streamRef.current = null
       setState({ kind: 'blocked', ...classify(err) })
@@ -75,8 +85,10 @@ export function useLocalMedia() {
   }, [])
 
   useEffect(() => {
+    disposed.current = false
     void acquire({ video: true, audio: true })
     return () => {
+      disposed.current = true
       if (!handedOff.current) stopStream(streamRef.current)
     }
   }, [acquire])

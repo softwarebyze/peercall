@@ -12,12 +12,43 @@ const NOUNS = [
   'jasper', 'kite', 'lagoon', 'moss', 'nest', 'osprey', 'prairie', 'ridge',
 ] as const
 
+/**
+ * Unambiguous base32: no i/l/o/u and no 0/1, so a token read off a screen can
+ * be typed back. 30 symbols.
+ */
+const TOKEN_ALPHABET = 'abcdefghjkmnpqrstvwxyz23456789'
+const TOKEN_LENGTH = 8
+
 function pick<T extends readonly string[]>(list: T): string {
   const index = Math.floor(Math.random() * list.length)
   return list[index] ?? list[0]
 }
 
-/** New rooms get a readable triple. Existing UUID-slice URLs keep working. */
+/**
+ * Uniform over the alphabet: rejection sampling, not modulo, so no symbol is
+ * more likely than another. `crypto` because a predictable id would let one
+ * client walk into another client's room.
+ */
+function randomToken(length = TOKEN_LENGTH): string {
+  const limit = 256 - (256 % TOKEN_ALPHABET.length)
+  let out = ''
+  while (out.length < length) {
+    const bytes = crypto.getRandomValues(new Uint8Array(length - out.length))
+    for (const byte of bytes) {
+      if (byte < limit && out.length < length) {
+        out += TOKEN_ALPHABET.charAt(byte % TOKEN_ALPHABET.length)
+      }
+    }
+  }
+  return out
+}
+
+/**
+ * New rooms get a readable triple plus an unguessable token. The words alone
+ * are only 32^3 = 32,768 combinations — enumerable in seconds — and knowing a
+ * code is enough to walk into a call, so entry must also require the random
+ * part (30^8 ≈ 6.6e11). Existing UUID-slice URLs keep working.
+ */
 export function generateRoomId(): string {
-  return `${pick(ADJECTIVES)}-${pick(NOUNS)}-${pick(NOUNS)}`
+  return `${pick(ADJECTIVES)}-${pick(NOUNS)}-${pick(NOUNS)}-${randomToken()}`
 }

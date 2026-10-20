@@ -21,7 +21,7 @@ test.describe('landing', () => {
     await name.fill('Ada')
     await expect(page.getByTestId('name-error')).toHaveCount(0)
     await page.getByRole('button', { name: 'Start call' }).click()
-    await expect(page).toHaveURL(/\/room\/[a-z]+-[a-z]+-[a-z]+\?host=1\b/)
+    await expect(page).toHaveURL(/\/room\/[a-z]+-[a-z]+-[a-z]+-[a-z2-9]{8}\?host=1\b/)
     await expect(page.getByTestId('lobby')).toBeVisible()
   })
 
@@ -39,7 +39,7 @@ test.describe('landing', () => {
     await page.goto('/')
     await page.getByPlaceholder('Name').fill('Ada')
     await page.getByRole('button', { name: 'Start call' }).click()
-    await expect(page).toHaveURL(/\/room\/[a-z]+-[a-z]+-[a-z]+\?host=1\b/)
+    await expect(page).toHaveURL(/\/room\/[a-z]+-[a-z]+-[a-z]+-[a-z2-9]{8}\?host=1\b/)
     await expect(page.getByTestId('lobby')).toBeVisible()
     await expect(page.getByLabel('Name shown to others')).toHaveValue('Ada')
     await page.getByRole('button', { name: 'Join call' }).click()

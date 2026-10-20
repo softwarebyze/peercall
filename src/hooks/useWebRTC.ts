@@ -1,7 +1,7 @@
 import { useRef, useState, useCallback, useEffect } from 'react'
 import type { SignalMsg } from './useSignaling'
 import type { MediaHandoff } from './useLocalMedia'
-import { reacquireConstraints } from '../lib/media'
+import { findLocalTrack, reacquireConstraints } from '../lib/media'
 
 // Fallback if /config is unreachable. STUN only — TURN comes from the server
 // (/config) when TURN_* or free Metered Open Relay env vars are set.
@@ -573,22 +573,28 @@ export function useWebRTC(opts: {
           [trackKind === 'video' ? 'video' : 'audio']: { deviceId: { exact: args.deviceId } },
         })
         const newTrack = stream.getTracks()[0]
-        if (!newTrack) return
+        const local = localStreamRef.current
+        const oldTrack = findLocalTrack(local, trackKind)
+        // Nothing to swap: this call started without that kind (an audio-only
+        // join, or a listen-only one) or ended while the camera opened. Adding
+        // a kind to a live connection needs send-side renegotiation, which this
+        // mesh does not do yet, so stop what was acquired instead of leaving
+        // an orphan track holding the device open.
+        if (!newTrack || !local || !oldTrack) {
+          stream.getTracks().forEach((t) => t.stop())
+          return
+        }
+        newTrack.enabled = trackKind === 'video' ? cameraOnRef.current : micOnRef.current
 
         for (const [, pc] of pcsRef.current) {
           const sender = pc.getSenders().find((s) => s.track?.kind === trackKind)
           if (sender) void sender.replaceTrack(newTrack)
         }
 
-        const oldTrack = localStreamRef.current?.getTracks().find((t) => t.kind === trackKind)
         oldTrack?.stop()
-        if (localStreamRef.current && oldTrack) {
-          localStreamRef.current.removeTrack(oldTrack)
-          localStreamRef.current.addTrack(newTrack)
-        }
-        newTrack.enabled = trackKind === 'video' ? cameraOnRef.current : micOnRef.current
-
-        if (localStreamRef.current) setLocalStream(new MediaStream(localStreamRef.current.getTracks()))
+        local.removeTrack(oldTrack)
+        local.addTrack(newTrack)
+        setLocalStream(new MediaStream(local.getTracks()))
       } catch {
         // device may have disappeared
       }

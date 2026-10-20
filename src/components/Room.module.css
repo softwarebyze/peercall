@@ -510,6 +510,15 @@
   text-align: left;
   justify-content: flex-start;
 }
+.deviceUnavailable {
+  font-size: 0.7rem;
+  line-height: 1.35;
+  color: var(--text-faint);
+}
+.deviceChoice:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
 /* The selected marker is rendered on every row so labels stay aligned. */
 .deviceDotOff {
   visibility: hidden;

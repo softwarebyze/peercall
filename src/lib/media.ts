@@ -15,3 +15,22 @@ export function reacquireConstraints(
   const video = handoff?.kind === 'stream' ? handoff.stream.getVideoTracks().length > 0 : true
   return { video, audio: true }
 }
+
+/**
+ * The live local track a device switch would replace, or null when the call
+ * never published that kind.
+ *
+ * Device switching is a track swap: `replaceTrack` on a sender that is already
+ * publishing that kind. A call that started without a camera (audio-only) has
+ * nothing to swap, and publishing a new kind mid-call needs send-side
+ * renegotiation this mesh does not do yet — the same reason `shareScreen`
+ * refuses in audio-only.
+ */
+export function findLocalTrack(
+  stream: MediaStream | null,
+  kind: 'video' | 'audio',
+): MediaStreamTrack | null {
+  if (!stream) return null
+  const tracks = kind === 'video' ? stream.getVideoTracks() : stream.getAudioTracks()
+  return tracks[0] ?? null
+}
