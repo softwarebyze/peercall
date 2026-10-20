@@ -160,7 +160,9 @@ export function Lobby(args: {
           )}
           {media.state.kind === 'pending' && <p className="dim">Starting camera and microphone…</p>}
           {media.state.kind === 'live' && !media.state.hasVideo && (
-            <p className="dim">Audio only. No camera on this device.</p>
+            <p className="dim">Your microphone is ready. Camera unavailable.{' '}
+              <button type="button" className="btn-ghost" onClick={media.retry}>Retry camera</button>
+            </p>
           )}
 
           <div className={styles.lobbyToggles}>

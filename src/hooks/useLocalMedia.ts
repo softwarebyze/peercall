@@ -21,6 +21,9 @@ function classify(err: unknown): { reason: 'denied' | 'missing' | 'unknown'; mes
   if (name === 'NotAllowedError' || name === 'PermissionDeniedError') {
     return { reason: 'denied', message: 'Camera/mic access denied.' }
   }
+  if (name === 'NotReadableError' || name === 'TrackStartError') {
+    return { reason: 'unknown', message: 'Camera or microphone is busy. Close other apps using it, then retry here.' }
+  }
   if (name === 'NotFoundError' || name === 'DevicesNotFoundError') {
     return { reason: 'missing', message: 'No camera or mic found on this device.' }
   }
@@ -39,9 +42,10 @@ export function useLocalMedia() {
   // the permission prompt was up). Cleanup only stops the stream it already
   // has, so without this the late stream's tracks stay live forever.
   const disposed = useRef(false)
+  const requestId = useRef(0)
 
-  const applyStream = (stream: MediaStream) => {
-    if (disposed.current) {
+  const applyStream = (stream: MediaStream, request: number) => {
+    if (disposed.current || request !== requestId.current) {
       stopStream(stream)
       return
     }
@@ -56,28 +60,31 @@ export function useLocalMedia() {
   }
 
   const acquire = useCallback(async (args: { video: boolean; audio: boolean }) => {
+    const request = ++requestId.current
+    const current = () => !disposed.current && request === requestId.current
     setState({ kind: 'pending' })
     try {
       const stream = await navigator.mediaDevices.getUserMedia({
         video: args.video,
         audio: args.audio,
       })
-      applyStream(stream)
+      applyStream(stream, request)
     } catch (err) {
+      if (!current()) return
       if (args.video && args.audio) {
         try {
           const audioOnly = await navigator.mediaDevices.getUserMedia({ video: false, audio: true })
-          applyStream(audioOnly)
+          applyStream(audioOnly, request)
           return
         } catch (audioErr) {
-          if (disposed.current) return
+          if (!current()) return
           stopStream(streamRef.current)
           streamRef.current = null
           setState({ kind: 'blocked', ...classify(audioErr) })
           return
         }
       }
-      if (disposed.current) return
+      if (!current()) return
       stopStream(streamRef.current)
       streamRef.current = null
       setState({ kind: 'blocked', ...classify(err) })
@@ -89,6 +96,7 @@ export function useLocalMedia() {
     void acquire({ video: true, audio: true })
     return () => {
       disposed.current = true
+      requestId.current++
       if (!handedOff.current) stopStream(streamRef.current)
     }
   }, [acquire])

@@ -123,8 +123,9 @@ export function IconShot(props: IconProps) {
 export function IconGear(props: IconProps) {
   return (
     <svg {...svgProps(props)}>
-      <circle cx="12" cy="12" r="3" />
-      <path d="M12 3.5v2.2M12 18.3v2.2M3.5 12h2.2M18.3 12h2.2M6 6l1.6 1.6M16.4 16.4 18 18M18 6l-1.6 1.6M7.6 16.4 6 18" />
+      <path d="M4 7h16M4 17h16" />
+      <circle cx="9" cy="7" r="3" fill="var(--bg)" />
+      <circle cx="15" cy="17" r="3" fill="var(--bg)" />
     </svg>
   )
 }

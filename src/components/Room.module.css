@@ -138,7 +138,7 @@
 .video {
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: contain;
 }
 /* Screens and the spotlight are letterboxed, never cropped. */
 .videoContain {
@@ -853,3 +853,11 @@
     animation: none;
   }
 }
+
+/* Tiles stay mounted in this grid as their stage/strip positions change. */
+.soloLayout { padding: clamp(8px, 3vw, 40px); gap: 24px; background: var(--bg); }
+.soloInvite { display: flex; align-items: center; justify-content: center; min-width: 0; }
+.peerAudio { display: inline-flex; align-items: center; gap: 2px; height: 15px; flex-shrink: 0; }
+.peerAudio i { display: block; width: 3px; background: var(--accent); height: 5px; }
+.peerAudio i:nth-child(2) { height: 10px; }
+.peerAudio i:nth-child(3) { height: 15px; }

@@ -6,6 +6,14 @@ export type CaptureResult =
 const TILE_W = 640
 const TILE_H = 360
 
+/** Fit the entire source frame inside a tile without stretching or cropping. */
+export function fitFrame(sourceW: number, sourceH: number, width: number, height: number) {
+  const scale = Math.min(width / sourceW, height / sourceH)
+  const w = sourceW * scale
+  const h = sourceH * scale
+  return { x: (width - w) / 2, y: (height - h) / 2, width: w, height: h }
+}
+
 function downloadBlob(args: { blob: Blob; filename: string }): void {
   const url = URL.createObjectURL(args.blob)
   const a = document.createElement('a')
@@ -55,7 +63,8 @@ export async function captureCallScreenshot(args: { grid: HTMLElement }): Promis
     const hasFrame = video !== null && video.videoWidth > 0 && video.style.visibility !== 'hidden'
 
     if (hasFrame && video) {
-      ctx.drawImage(video, x, y, TILE_W, TILE_H)
+      const frame = fitFrame(video.videoWidth, video.videoHeight, TILE_W, TILE_H)
+      ctx.drawImage(video, x + frame.x, y + frame.y, frame.width, frame.height)
     } else {
       ctx.fillStyle = '#131316'
       ctx.fillRect(x, y, TILE_W, TILE_H)

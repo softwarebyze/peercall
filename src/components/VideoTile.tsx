@@ -1,4 +1,5 @@
 import { useRef, useEffect, useState } from 'react'
+import { useMicLevel } from '../hooks/useMicLevel'
 import styles from './Room.module.css'
 import { IconMicOff, IconScreen, IconFocus, IconUnfocus } from './Icons'
 
@@ -23,6 +24,7 @@ interface VideoTileProps {
   onToggleFocus?: () => void
   /** CSS `grid-column`, so a short last row can be centered. */
   gridColumn?: string
+  gridRow?: string
 }
 
 const stateLabel: Partial<Record<RTCPeerConnectionState, string>> = {
@@ -74,17 +76,23 @@ export function VideoTile({
   focused = false,
   onToggleFocus,
   gridColumn,
+  gridRow,
 }: VideoTileProps) {
   const videoRef = useRef<HTMLVideoElement>(null)
   const streamRef = useRef<MediaStream | null>(null)
 
   // Force srcObject update when stream reference changes (covers mount + track swap)
   useEffect(() => {
-    if (videoRef.current && stream && streamRef.current !== stream) {
+    if (videoRef.current && streamRef.current !== stream) {
       videoRef.current.srcObject = stream
       streamRef.current = stream
     }
   }, [stream])
+
+  useEffect(() => {
+    const el = videoRef.current
+    return () => { if (el) el.srcObject = null }
+  }, [])
 
   useEffect(() => {
     const el = videoRef.current
@@ -95,6 +103,7 @@ export function VideoTile({
   const remoteVideoMuted = useTrackMuted(isLocal ? null : stream, 'video')
   const remoteAudioMuted = useTrackMuted(isLocal ? null : stream, 'audio')
 
+  const level = useMicLevel({ stream, active: !micOff })
   const noVideo = !stream || (isLocal ? !!videoOff : remoteVideoMuted)
   const micMuted = isLocal ? !!micOff : remoteAudioMuted
   const showConnectionIssue =
@@ -108,7 +117,7 @@ export function VideoTile({
       data-variant={variant}
       data-sharing={sharing ? 'true' : undefined}
       data-focused={focused ? 'true' : undefined}
-      style={gridColumn ? { gridColumn } : undefined}
+      style={{ gridColumn, gridRow }}
     >
       <video
         ref={videoRef}
@@ -125,7 +134,7 @@ export function VideoTile({
           onClick={onToggleFocus}
           aria-pressed={focused}
           aria-label={focused ? `Stop focusing ${name}` : `Focus ${name}`}
-          title={focused ? 'Stop focusing' : 'Focus this participant'}
+          title={focused ? 'Restore grid (your view only)' : 'Enlarge (your view only)'}
         >
           {focused ? <IconUnfocus size={14} /> : <IconFocus size={14} />}
         </button>
@@ -148,6 +157,9 @@ export function VideoTile({
         </div>
       )}
       <div className={styles.tileLabel}>
+        <span className={styles.peerAudio} data-testid="peer-audio-level" data-active={level > 0.05 && !micMuted ? 'true' : 'false'} title={`Audio activity: ${name}`} aria-hidden>
+          {[0, 1, 2].map(i => <i key={i} style={{ opacity: !micMuted && level > i / 3 ? 1 : 0.2 }} />)}
+        </span>
         {sharing && (
           <span className={styles.presentBadge} title="Sharing their screen">
             <IconScreen size={12} /> Presenting
@@ -159,7 +171,7 @@ export function VideoTile({
             <IconMicOff size={12} />
           </span>
         )}
-        {isHost && <span className={styles.hostBadge}>HOST</span>}
+        {isHost && <span className={styles.hostBadge} title="Can end the call for everyone. Controls transfer if the host disconnects.">HOST</span>}
       </div>
     </div>
   )

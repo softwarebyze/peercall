@@ -132,3 +132,8 @@ input:focus, textarea:focus { border-color: var(--accent); }
 @media (prefers-reduced-motion: reduce) {
   .pulse-dot { animation: none; }
 }
+
+/* Keep Safari from zooming on focused fields while preserving pinch zoom. */
+@media (max-width: 700px) {
+  input, textarea, select { font-size: 16px; }
+}

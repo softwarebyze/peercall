@@ -33,49 +33,45 @@ test('a stream that resolves after leaving the gate is stopped', async ({ page }
   expect(states).toEqual(states.map(() => 'ended'))
 })
 
-/**
- * An audio-only call publishes no camera, and adding a kind mid-call needs
- * send-side renegotiation the mesh does not do yet. The panel must say so and
- * must not offer a switch that can only fail (and used to leak the track).
- */
-test('an audio-only call disables camera switching', async ({ page }) => {
-  await page.addInitScript(() => {
+/** A camera that becomes available later can be enabled without rejoining. */
+test('an audio-only call can enable a camera while keeping the microphone', async ({ browser }) => {
+  const id = roomId()
+  const alice = await newPeer(browser, 'Alice')
+  const bob = await newPeer(browser, 'Bob')
+  await alice.page.addInitScript(() => {
     const md = navigator.mediaDevices
     const original = md.getUserMedia.bind(md)
     let failedVideo = false
-    md.getUserMedia = (constraints?: MediaStreamConstraints) => {
-      if (constraints?.video && !failedVideo) {
+    md.getUserMedia = c => {
+      if (c?.video && !failedVideo) {
         failedVideo = true
-        const err = new Error('no camera')
-        err.name = 'NotFoundError'
-        return Promise.reject(err)
+        return Promise.reject(new DOMException('Camera busy', 'NotReadableError'))
       }
-      return original(constraints)
+      return original(c)
     }
   })
-
-  await page.goto('/')
-  await page.getByPlaceholder('Name').fill('Ada')
-  await page.getByRole('button', { name: 'Start call' }).click()
-
-  // No camera: the lobby falls back to mic-only.
-  const tile = page.locator('[data-tile]').first()
-  await expect(tile).toContainText('Camera off', { timeout: 15000 })
-  await page.getByRole('button', { name: 'Join call' }).click()
-  await expect(tile).toContainText('Camera off', { timeout: 15000 })
-
-  await page.getByTitle('Device settings').click()
-  const panel = page.getByTestId('device-panel')
-  await expect(panel).toBeVisible()
-  await expect(panel.getByText(/Camera is off for this call/)).toBeVisible()
-
-  const cameraRows = panel.getByTestId('devices-camera').getByRole('button')
-  const count = await cameraRows.count()
-  expect(count).toBeGreaterThan(0)
-  for (let i = 0; i < count; i++) await expect(cameraRows.nth(i)).toBeDisabled()
-
-  // The mic stays switchable — only the missing kind is unavailable.
-  await expect(panel.getByTestId('devices-mic').getByRole('button').first()).toBeEnabled()
+  await alice.page.goto(`/room/${id}?host=1`)
+  await passJoinGate(alice.page)
+  await bob.page.goto(`/room/${id}`)
+  await passJoinGate(bob.page)
+  await expect(alice.page.locator('[data-tile-name="Alice (you)"]')).toContainText('Camera off')
+  await alice.page.evaluate(() => Object.assign(window, {
+    __originalMic: (document.querySelector('video')!.srcObject as MediaStream).getAudioTracks()[0],
+  }))
+  await alice.page.getByTitle('Device settings').click()
+  const panel = alice.page.getByTestId('device-panel')
+  await panel.getByTestId('devices-camera').getByRole('button').first().click()
+  await panel.getByLabel('Close devices').click()
+  await waitForPlayingVideos(alice.page, 2)
+  await waitForPlayingVideos(bob.page, 2)
+  await expect(bob.page.locator('[data-tile-name="Alice"] video')).toHaveCSS('visibility', 'visible')
+  expect(await alice.page.evaluate(() =>
+    (document.querySelector('video')!.srcObject as MediaStream).getAudioTracks()[0] ===
+    (window as unknown as {__originalMic: MediaStreamTrack}).__originalMic,
+  )).toBe(true)
+  await expect(alice.page.locator('[data-tile-name="Alice (you)"]')).not.toContainText('Camera off')
+  await alice.ctx.close()
+  await bob.ctx.close()
 })
 
 /**

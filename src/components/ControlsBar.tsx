@@ -207,11 +207,6 @@ export function ControlsBar(props: ControlsBarProps) {
           micDeviceId={props.micDeviceId}
           speakerDeviceId={props.speakerDeviceId}
           showSpeaker={speakerOk}
-          cameraUnavailable={
-            props.cameraAvailable
-              ? undefined
-              : 'Camera is off for this call — rejoin with video to use it.'
-          }
           onSwitch={props.onSwitchDevice}
           onClose={() => setDevicesOpen(false)}
         />

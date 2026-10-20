@@ -101,9 +101,8 @@ function Landing() {
         </h1>
 
         <p className={styles.sub}>
-          Browser-to-browser video. Media stays on the WebRTC peer connection
-          (DTLS-SRTP). Chat rides the signaling server, then the room is gone.
-          Recordings save to your disk.
+          Private video calls, right in your browser. Share a link to meet—no accounts
+          or downloads. Audio and video are encrypted in transit. Recordings stay on your device.
         </p>
 
         <div className={styles.startBlock}>
@@ -187,6 +186,7 @@ function Landing() {
         </form>
 
         <div className={styles.productFrame} aria-hidden>
+          <span className={styles.previewCaption}>A look inside a call</span>
           <div className={styles.productBar}>
             <div className="pulse-dot" />
             <span className="accent">PeerCall</span>

@@ -71,7 +71,8 @@ function fallbackLabel(args: { kind: MediaKind; deviceId: string }): string {
 }
 
 function displayLabel(device: RawDevice): string {
-  const stripped = device.label.replace(/^(Default|Communications)\s*[-–—]\s*/i, '').trim()
+  const stripped = device.label.replace(/^(Default|Communications)\s*[-–—]\s*/i, '')
+    .replace(/\s*\([0-9a-f]{4}:[0-9a-f]{4}\)\s*$/i, '').trim()
   if (stripped) return stripped
   return fallbackLabel({ kind: mediaKind(device.kind), deviceId: device.deviceId })
 }

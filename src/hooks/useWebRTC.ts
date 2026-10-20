@@ -33,6 +33,12 @@ function parseIceConfig(data: unknown): RTCConfiguration | null {
   return { iceServers: servers }
 }
 
+/** Prefer the negotiated slot: an answerer may also have an unused local slot. */
+function senderFor(pc: RTCPeerConnection, kind: 'video' | 'audio') {
+  const matching = pc.getTransceivers().filter(t => t.receiver.track.kind === kind)
+  return (matching.find(t => t.mid !== null) ?? matching[0])?.sender
+}
+
 export interface PeerStream {
   id: string
   name: string
@@ -84,6 +90,10 @@ export function useWebRTC(opts: {
   const pendingOffersRef = useRef<Map<string, RTCSessionDescriptionInit>>(new Map())
   const lastFailTimeRef = useRef<Map<string, number>>(new Map())
   const localStreamRef = useRef<MediaStream | null>(null)
+  const cameraBeforeShareRef = useRef<MediaStreamTrack | null>(null)
+  const sharingRef = useRef(false)
+  const aliveRef = useRef(true)
+  const acquisitionRef = useRef(0)
   const localNameRef = useRef(localName)
   localNameRef.current = localName
   const peersRef = useRef(peers)
@@ -190,14 +200,23 @@ export function useWebRTC(opts: {
           if (track.kind === 'audio') hasAudio = true
         }
       }
-      // Audio-only / listen-only still need recv m-lines for the other side.
-      if (!hasVideo) pc.addTransceiver('video', { direction: 'recvonly' })
-      if (!hasAudio) pc.addTransceiver('audio', { direction: 'recvonly' })
+      // Reserve bidirectional slots so a camera/mic can be enabled later with
+      // replaceTrack, without a new offer or leaving the call.
+      if (!hasVideo) pc.addTransceiver('video', { direction: 'sendrecv' })
+      if (!hasAudio) pc.addTransceiver('audio', { direction: 'sendrecv' })
 
       pc.ontrack = (ev) => {
-        const stream =
-          ev.streams && ev.streams[0] ? ev.streams[0] : new MediaStream([ev.track])
-        streamsRef.current.set(peerId, stream)
+        // Streamless reserved transceivers and camera/audio can arrive in
+        // separate events. Aggregate by peer rather than overwriting audio.
+        const previous = streamsRef.current.get(peerId)
+        if (previous?.getTracks().includes(ev.track)) return
+        // A new stream identity makes playback and mute listeners notice a
+        // newly received kind, even if audio arrived before the video event.
+        const remote = new MediaStream([
+          ...(previous?.getTracks().filter(t => t.kind !== ev.track.kind) ?? []),
+          ev.track,
+        ])
+        streamsRef.current.set(peerId, remote)
         refreshRemote()
       }
 
@@ -279,7 +298,21 @@ export function useWebRTC(opts: {
       }
       if (pc.signalingState === 'stable') {
         pc.setRemoteDescription(new RTCSessionDescription(data))
-          .then(() => flushPendingCandidates(peerId))
+          .then(async () => {
+            flushPendingCandidates(peerId)
+            // Browsers may create a new receiving transceiver for an offer
+            // instead of reusing an empty locally reserved slot. Configure
+            // the negotiated slots before answering, including absent kinds.
+            for (const transceiver of pc.getTransceivers()) {
+              if (transceiver.mid === null) continue
+              const kind = transceiver.receiver.track.kind as 'audio' | 'video'
+              transceiver.direction = 'sendrecv'
+              const local = localStreamRef.current
+              const track = local?.getTracks().find(t => t.kind === kind) ?? null
+              await transceiver.sender.replaceTrack(track)
+              if (local) transceiver.sender.setStreams(local)
+            }
+          })
           .then(() => pc.createAnswer())
           .then((answer) => pc.setLocalDescription(answer))
           .then(() => {
@@ -313,6 +346,10 @@ export function useWebRTC(opts: {
   }, [peers, myId, localStream, iceReady, allowNoMedia, createPC, acceptOffer])
 
   const takeStream = useCallback((stream: MediaStream) => {
+    const previous = localStreamRef.current
+    if (previous && previous !== stream) {
+      previous.getTracks().filter((track) => !stream.getTracks().includes(track)).forEach((track) => track.stop())
+    }
     localStreamRef.current = stream
     setLocalStream(stream)
     setMediaError(null)
@@ -323,13 +360,15 @@ export function useWebRTC(opts: {
       constraints: { video: boolean; audio: boolean },
       shouldCommit: () => boolean = () => true,
     ) => {
+      const request = ++acquisitionRef.current
+      const ownsRequest = () => aliveRef.current && request === acquisitionRef.current && shouldCommit()
       try {
         const stream = await navigator.mediaDevices.getUserMedia(constraints)
         // The caller that kicked this off may have been torn down while
         // getUserMedia was pending — unmount, or a newer acquisition/retry.
         // Only the still-owning caller may commit; anyone else stops what it
         // acquired so we never clobber a newer stream or leak live tracks.
-        if (!shouldCommit()) {
+        if (!ownsRequest()) {
           stream.getTracks().forEach((t) => t.stop())
           return
         }
@@ -341,7 +380,7 @@ export function useWebRTC(opts: {
           t.enabled = micOnRef.current
         })
       } catch (err) {
-        if (!shouldCommit()) return
+        if (!ownsRequest()) return
         const name =
           typeof err === 'object' && err !== null && 'name' in err && typeof err.name === 'string'
             ? err.name
@@ -349,6 +388,8 @@ export function useWebRTC(opts: {
         const msg =
           name === 'NotAllowedError'
             ? 'Camera/mic access denied. Allow permissions, then retry.'
+            : name === 'NotReadableError' || name === 'TrackStartError'
+              ? 'Camera or microphone is busy. Close other apps using it, then retry here.'
             : name === 'NotFoundError'
               ? 'No camera or mic found on this device.'
               : 'Could not access camera or mic.'
@@ -360,7 +401,6 @@ export function useWebRTC(opts: {
 
   // Init local media from the lobby handoff, or request it here (rejoin).
   useEffect(() => {
-    if (!myId) return
     if (localStreamRef.current) return
     if (initialMedia?.kind === 'listen') {
       setAllowNoMedia(true)
@@ -383,16 +423,25 @@ export function useWebRTC(opts: {
     return () => {
       cancelled = true
     }
-  }, [myId, initialMedia, acquireMedia, takeStream])
+  }, [initialMedia, acquireMedia, takeStream])
 
   // Tear down peer connections and stop media when the hook unmounts.
   // Closing the PCs matters: `call_ended` unmounts the room without going
   // through endCall(), and a leaked RTCPeerConnection keeps the remote peer's
   // connection alive until GC.
   useEffect(
-    () => () => {
-      for (const [id] of pcsRef.current) cleanupPC(id)
-      localStreamRef.current?.getTracks().forEach((t) => t.stop())
+    () => {
+      aliveRef.current = true
+      return () => {
+        aliveRef.current = false
+        acquisitionRef.current++
+        for (const [id] of pcsRef.current) cleanupPC(id)
+        localStreamRef.current?.getTracks().forEach((t) => t.stop())
+        localStreamRef.current = null
+        cameraBeforeShareRef.current?.stop()
+        cameraBeforeShareRef.current = null
+        sharingRef.current = false
+      }
     },
     [cleanupPC]
   )
@@ -401,9 +450,8 @@ export function useWebRTC(opts: {
   useEffect(() => {
     if (!localStream) return
     for (const [, pc] of pcsRef.current) {
-      const senders = pc.getSenders()
       for (const track of localStream.getTracks()) {
-        const sender = senders.find((s) => s.track?.kind === track.kind)
+        const sender = senderFor(pc, track.kind as 'audio' | 'video')
         if (sender) {
           sender.replaceTrack(track).catch(() => {})
         } else {
@@ -411,6 +459,14 @@ export function useWebRTC(opts: {
         }
       }
     }
+  }, [localStream])
+
+  useEffect(() => {
+    const camera = localStream?.getVideoTracks()[0]
+    if (!camera || sharingRef.current) return
+    const ended = () => setMediaError('Camera disconnected. Reconnect it, then choose Retry camera.')
+    camera.addEventListener('ended', ended)
+    return () => camera.removeEventListener('ended', ended)
   }, [localStream])
 
   const processedCountRef = useRef(0)
@@ -457,7 +513,11 @@ export function useWebRTC(opts: {
     (on: boolean) => {
       cameraOnRef.current = on
       setCameraOn(on)
-      localStreamRef.current?.getVideoTracks().forEach((t) => (t.enabled = on))
+      if (sharingRef.current) {
+        if (cameraBeforeShareRef.current) cameraBeforeShareRef.current.enabled = on
+      } else {
+        localStreamRef.current?.getVideoTracks().forEach((t) => (t.enabled = on))
+      }
     },
     []
   )
@@ -472,19 +532,23 @@ export function useWebRTC(opts: {
   )
 
   const shareScreen = useCallback(async () => {
+    if (sharingRef.current) return
+    const localAtStart = localStreamRef.current
     try {
       const screen = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false })
       const screenTrack = screen.getVideoTracks()[0]
-      if (!screenTrack) return
-      // The screen only reaches peers by replacing our video sender's track.
-      // In audio-only / listen-only mode there is no video sender (the video
-      // transceiver is recvonly), so the track would never arrive — and
-      // signaling a share would spotlight an avatar on everyone's stage. Until
-      // send-side renegotiation exists, refuse the share instead of lying.
+      if (!screenTrack || !aliveRef.current || sharingRef.current || localAtStart !== localStreamRef.current) {
+        screen.getTracks().forEach((t) => t.stop())
+        return
+      }
+      if ('contentHint' in screenTrack) screenTrack.contentHint = 'detail'
+      // This version presents by replacing the camera sender. Separate
+      // camera and screen publication will be added as a follow-up.
       if (!localStreamRef.current?.getVideoTracks()[0]) {
         screen.getTracks().forEach((t) => t.stop())
         return
       }
+      sharingRef.current = true
       setScreenSharing(true)
       // Tell peers we are presenting so they can spotlight the shared screen
       // instead of leaving it in a one-third grid cell.
@@ -495,12 +559,13 @@ export function useWebRTC(opts: {
       }
 
       for (const [, pc] of pcsRef.current) {
-        const sender = pc.getSenders().find((s) => s.track?.kind === 'video')
-        if (sender) void sender.replaceTrack(screenTrack)
+        const sender = senderFor(pc, 'video')
+        if (sender) void sender.replaceTrack(screenTrack).catch(() => {})
       }
 
       const oldVideo = localStreamRef.current?.getVideoTracks()[0]
       if (localStreamRef.current && oldVideo) {
+        cameraBeforeShareRef.current = oldVideo
         localStreamRef.current.removeTrack(oldVideo)
         localStreamRef.current.addTrack(screenTrack)
         setLocalStream(new MediaStream(localStreamRef.current.getTracks()))
@@ -511,92 +576,79 @@ export function useWebRTC(opts: {
   }, [sendSignal])
 
   const stopScreen = useCallback(async () => {
-    // Drop the sharing flag up front. If the camera cannot be reacquired —
-    // unplugged, permission revoked, or the browser's own "Stop sharing"
-    // button — every peer must still fall out of the spotlight on a dead
-    // screen, so the signal can never depend on that fetch succeeding.
+    if (!sharingRef.current) return
+    sharingRef.current = false
     setScreenSharing(false)
     sendSignal('screen_share', { sharing: false })
-
     const local = localStreamRef.current
     const screenTrack = local?.getVideoTracks()[0]
-    const dropScreenTrack = () => {
-      screenTrack?.stop()
-      if (local && screenTrack) {
-        local.removeTrack(screenTrack)
-        setLocalStream(new MediaStream(local.getTracks()))
-      }
+    if (screenTrack) {
+      screenTrack.onended = null
+      screenTrack.stop()
+      local?.removeTrack(screenTrack)
     }
-
-    try {
-      const camStream = await navigator.mediaDevices.getUserMedia({ video: true })
-      const camTrack = camStream.getVideoTracks()[0]
-      if (!camTrack) {
-        camStream.getTracks().forEach((t) => t.stop())
-        dropScreenTrack()
-        return
+    const camera = cameraBeforeShareRef.current
+    cameraBeforeShareRef.current = null
+    if (local && camera?.readyState === 'live') {
+      camera.enabled = cameraOnRef.current
+      local.addTrack(camera)
+      for (const pc of pcsRef.current.values()) {
+        const sender = senderFor(pc, 'video')
+        if (sender) void sender.replaceTrack(camera).catch(() => {})
       }
-      // The call can be torn down, or the local stream replaced, while
-      // getUserMedia is in flight. Attaching the fresh track then would leave
-      // the camera on in a stream nobody owns — and re-publishing state for a
-      // stream we no longer hold. Stop the tracks and leave state alone.
-      if (!local || !screenTrack || localStreamRef.current !== local) {
-        camStream.getTracks().forEach((t) => t.stop())
-        screenTrack?.stop()
-        return
-      }
-
-      for (const [, pc] of pcsRef.current) {
-        const sender = pc.getSenders().find((s) => s.track?.kind === 'video')
-        if (sender) void sender.replaceTrack(camTrack)
-      }
-
-      camTrack.enabled = cameraOnRef.current
-      if (local && screenTrack) {
-        local.removeTrack(screenTrack)
-        local.addTrack(camTrack)
-        setLocalStream(new MediaStream(local.getTracks()))
-      }
-      screenTrack?.stop()
-    } catch {
-      // Camera may be gone; the share is already stopped, so keep the call up
-      // without video rather than leaving the screen track live in a sender.
-      dropScreenTrack()
+      setLocalStream(new MediaStream(local.getTracks()))
+    } else {
+      camera?.stop()
+      // Do not reopen the camera just because sharing ended. An explicit
+      // retry keeps permission requests predictable and leaves audio working.
+      if (local) setLocalStream(new MediaStream(local.getTracks()))
+      if (aliveRef.current) setMediaError('Camera disconnected. Reconnect it, then choose Retry camera.')
     }
   }, [sendSignal])
 
   const switchDevice = useCallback(
     async (args: { kind: 'videoinput' | 'audioinput'; deviceId: string }) => {
       const trackKind = args.kind === 'videoinput' ? 'video' : 'audio'
+      const ownedLocal = localStreamRef.current
       try {
         const stream = await navigator.mediaDevices.getUserMedia({
-          [trackKind === 'video' ? 'video' : 'audio']: { deviceId: { exact: args.deviceId } },
+          [trackKind === 'video' ? 'video' : 'audio']: args.deviceId ? { deviceId: { exact: args.deviceId } } : true,
         })
         const newTrack = stream.getTracks()[0]
-        const local = localStreamRef.current
-        const oldTrack = findLocalTrack(local, trackKind)
-        // Nothing to swap: this call started without that kind (an audio-only
-        // join, or a listen-only one) or ended while the camera opened. Adding
-        // a kind to a live connection needs send-side renegotiation, which this
-        // mesh does not do yet, so stop what was acquired instead of leaving
-        // an orphan track holding the device open.
-        if (!newTrack || !local || !oldTrack) {
+        const local = localStreamRef.current ?? new MediaStream()
+        const oldTrack = trackKind === 'video' && sharingRef.current
+          ? cameraBeforeShareRef.current
+          : findLocalTrack(local, trackKind)
+        if (!newTrack || !aliveRef.current || localStreamRef.current !== ownedLocal) {
           stream.getTracks().forEach((t) => t.stop())
           return
         }
         newTrack.enabled = trackKind === 'video' ? cameraOnRef.current : micOnRef.current
 
+        if (trackKind === 'video' && sharingRef.current) {
+          oldTrack?.stop()
+          cameraBeforeShareRef.current = newTrack
+          setLocalStream(new MediaStream(local.getTracks()))
+          return
+        }
         for (const [, pc] of pcsRef.current) {
-          const sender = pc.getSenders().find((s) => s.track?.kind === trackKind)
-          if (sender) void sender.replaceTrack(newTrack)
+          const sender = senderFor(pc, trackKind)
+          if (sender) void sender.replaceTrack(newTrack).catch(() => {})
         }
 
         oldTrack?.stop()
-        local.removeTrack(oldTrack)
+        if (oldTrack) local.removeTrack(oldTrack)
         local.addTrack(newTrack)
+        localStreamRef.current = local
+        setAllowNoMedia(false)
         setLocalStream(new MediaStream(local.getTracks()))
-      } catch {
-        // device may have disappeared
+        setMediaError(null)
+      } catch (error) {
+        if (!aliveRef.current || localStreamRef.current !== ownedLocal) return
+        const denied = error instanceof DOMException && error.name === 'NotAllowedError'
+        setMediaError(denied
+          ? 'Camera or microphone permission is blocked. Allow access in your browser’s site settings, then retry here.'
+          : 'Could not open that device. Check it is connected and close other apps using it, then retry here.')
       }
     },
     []
@@ -608,6 +660,11 @@ export function useWebRTC(opts: {
     for (const [id] of pcsRef.current) cleanupPC(id)
     localStreamRef.current?.getTracks().forEach((t) => t.stop())
     localStreamRef.current = null
+    cameraBeforeShareRef.current?.stop()
+    cameraBeforeShareRef.current = null
+    sharingRef.current = false
+    acquisitionRef.current++
+    setScreenSharing(false)
     setLocalStream(null)
     refreshRemote()
   }, [cleanupPC, refreshRemote])
@@ -628,17 +685,34 @@ export function useWebRTC(opts: {
     switchDevice,
     endCall,
     mediaError,
-    cameraDeviceId: localStream?.getVideoTracks()[0]?.getSettings().deviceId ?? null,
+    cameraDeviceId: (cameraBeforeShareRef.current ?? localStream?.getVideoTracks()[0])?.getSettings().deviceId ?? null,
     micDeviceId: localStream?.getAudioTracks()[0]?.getSettings().deviceId ?? null,
     retryMedia: () => {
       setAllowNoMedia(false)
-      void acquireMedia({ video: true, audio: true })
+      if (localStreamRef.current?.getAudioTracks().some(t => t.readyState === 'live')) {
+        void switchDevice({ kind: 'videoinput', deviceId: '' })
+      } else {
+        void acquireMedia({ video: true, audio: true })
+      }
     },
     joinAudioOnly: () => {
+      if (sharingRef.current) void stopScreen()
       setAllowNoMedia(false)
       void acquireMedia({ video: false, audio: true })
     },
     joinListenOnly: () => {
+      acquisitionRef.current++
+      if (sharingRef.current) sendSignal('screen_share', { sharing: false })
+      sharingRef.current = false
+      setScreenSharing(false)
+      localStreamRef.current?.getTracks().forEach(t => t.stop())
+      cameraBeforeShareRef.current?.stop()
+      cameraBeforeShareRef.current = null
+      localStreamRef.current = null
+      for (const pc of pcsRef.current.values()) {
+        for (const sender of pc.getSenders()) void sender.replaceTrack(null).catch(() => {})
+      }
+      setLocalStream(null)
       setAllowNoMedia(true)
       setMediaError(null)
     },

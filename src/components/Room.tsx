@@ -13,11 +13,10 @@ import { ChatPanel } from './ChatPanel'
 import { InviteCard } from './InviteCard'
 import { IconCopy, IconCheck, IconPeople, IconWarn } from './Icons'
 import { captureCallScreenshot } from '../lib/screenshot'
-import { gridTracks, resolveLayout, type GridTracks, type LayoutTile } from '../lib/layout'
+import { resolveLayout, type LayoutTile } from '../lib/layout'
+import { tileSlots } from '../lib/tileSlots'
 import type { MediaKind } from '../lib/devices'
 import styles from './Room.module.css'
-
-type TileVariant = 'grid' | 'strip' | 'stage'
 
 interface CallPeer {
   id: string
@@ -287,61 +286,31 @@ function RoomSession(props: {
     pinnedId,
     aspect,
   })
-  const spotlight = layout.mode === 'spotlight' ? layout : null
-  const shares = layout.mode === 'shares' ? layout : null
-  const gridLayout = layout.mode === 'grid' ? layout : null
-  const stageTile = spotlight ? (allPeers.find((p) => p.id === spotlight.stageId) ?? null) : null
-  const shareIds = shares ? new Set(shares.stageIds) : null
-  const shareTiles = shares
-    ? shares.stageIds
-        .map((id) => allPeers.find((p) => p.id === id))
-        .filter((p): p is CallPeer => p !== undefined)
-    : []
-  // A sharer's camera is replaced by their screen, so they belong on the stage
-  // and never also in the filmstrip.
-  const strip = spotlight
-    ? allPeers.filter((p) => p.id !== spotlight.stageId)
-    : shareIds
-      ? allPeers.filter((p) => !shareIds.has(p.id))
-      : []
-  const tracks = gridLayout ? gridTracks(allPeers.length, gridLayout.cols, gridLayout.rows) : null
-  const shareTracks = shares ? gridTracks(shareTiles.length, shares.cols, shares.rows) : null
-  // Tiles are uniform; only the first tile of a short last row is nudged right
-  // so the row is centered instead of left-hugging with a gap on the right.
-  const columnFor = (index: number, at: GridTracks | null): string | undefined => {
-    if (!at) return undefined
-    if (index === at.lastRowStart && at.lastRowOffset > 0) {
-      return `${1 + at.lastRowOffset} / span ${at.span}`
-    }
-    return `span ${at.span}`
-  }
-  const tileColumn = (index: number) => columnFor(index, tracks)
-  const shareColumn = (index: number) => columnFor(index, shareTracks)
+  const placement = tileSlots(allPeers.map(p => p.id), layout)
+  const soloPortrait = layoutSize.width < 700
 
-  const renderTile = (p: CallPeer, variant: TileVariant, gridColumn?: string) => (
-    <VideoTile
-      key={p.id}
-      name={p.name}
-      stream={p.stream}
-      isLocal={p.isLocal}
-      isHost={p.isHost}
-      connectionState={p.connectionState}
-      videoOff={p.isLocal ? rtc.listenOnly || !rtc.cameraOn || !rtc.hasVideo : undefined}
-      micOff={p.isLocal ? rtc.listenOnly || !rtc.micOn || !rtc.hasAudio : undefined}
-      sinkId={speakerDeviceId}
-      variant={variant}
-      sharing={p.sharing}
-      focused={pinnedId === p.id}
-      gridColumn={gridColumn}
-      onToggleFocus={
-        variant === 'stage'
-          ? pinnedId === p.id
-            ? () => setPinnedId(null)
-            : undefined
-          : () => setPinnedId((current) => (current === p.id ? null : p.id))
-      }
-    />
-  )
+  const renderTile = (p: CallPeer) => {
+    const slot = placement.slots[p.id]
+    return (
+      <VideoTile
+        key={p.isLocal ? 'local' : p.id}
+        name={p.name}
+        stream={p.stream}
+        isLocal={p.isLocal}
+        isHost={p.isHost}
+        connectionState={p.connectionState}
+        videoOff={p.isLocal ? !rtc.screenSharing && (rtc.listenOnly || !rtc.cameraOn || !rtc.hasVideo) : undefined}
+        micOff={p.isLocal ? rtc.listenOnly || !rtc.micOn || !rtc.hasAudio : undefined}
+        sinkId={speakerDeviceId}
+        variant={slot.variant}
+        sharing={p.sharing}
+        focused={pinnedId === p.id}
+        gridColumn={alone ? '1' : slot.column}
+        gridRow={alone ? '1' : slot.row}
+        onToggleFocus={() => setPinnedId(current => current === p.id ? null : p.id)}
+      />
+    )
+  }
 
   const handleRecordToggle = () => {
     if (recorder.recording) {
@@ -452,7 +421,7 @@ function RoomSession(props: {
           <IconWarn size={16} />
           <span>{rtc.mediaError}</span>
           <button className="btn-ghost" type="button" onClick={rtc.retryMedia}>
-            Retry
+            Retry camera
           </button>
           <button className="btn-ghost" type="button" onClick={rtc.joinAudioOnly}>
             Audio only
@@ -521,71 +490,19 @@ function RoomSession(props: {
       </div>
 
       <div className={styles.body}>
-        {alone ? (
-          <div className={styles.solo}>
-            <div className={styles.soloInner}>
-              <div ref={layoutRef} className={styles.soloPreview}>
-                {allPeers.map((p) => renderTile(p, 'grid'))}
-              </div>
-              <InviteCard roomId={roomId} url={inviteUrl} />
-            </div>
-          </div>
-        ) : spotlight && stageTile ? (
-          <div
-            ref={layoutRef}
-            className={`${styles.spotlight} ${panelOpen ? styles.gridNarrow : ''}`}
-            data-layout="spotlight"
-          >
-            <div className={styles.stage}>{renderTile(stageTile, 'stage')}</div>
-            {strip.length > 0 && (
-              <div className={styles.strip} data-testid="filmstrip">
-                {strip.map((p) => (
-                  <div key={p.id} className={styles.stripItem}>
-                    {renderTile(p, 'strip')}
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        ) : shares && shareTracks && shareTiles.length > 0 ? (
-          <div
-            ref={layoutRef}
-            className={`${styles.spotlight} ${panelOpen ? styles.gridNarrow : ''}`}
-            data-layout="shares"
-          >
-            <div
-              className={styles.stageGrid}
-              data-testid="share-stage"
-              style={{
-                gridTemplateColumns: `repeat(${shareTracks.unit}, minmax(0, 1fr))`,
-                gridTemplateRows: `repeat(${shares.rows}, minmax(0, 1fr))`,
-              }}
-            >
-              {shareTiles.map((p, i) => renderTile(p, 'stage', shareColumn(i)))}
-            </div>
-            {strip.length > 0 && (
-              <div className={styles.strip} data-testid="filmstrip">
-                {strip.map((p) => (
-                  <div key={p.id} className={styles.stripItem}>
-                    {renderTile(p, 'strip')}
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        ) : gridLayout ? (
-          <div
-            ref={layoutRef}
-            className={`${styles.grid} ${panelOpen ? styles.gridNarrow : ''}`}
-            data-layout={`grid-${gridLayout.cols}x${gridLayout.rows}`}
-            style={{
-              gridTemplateColumns: `repeat(${tracks ? tracks.unit : gridLayout.cols}, minmax(0, 1fr))`,
-              gridTemplateRows: `repeat(${gridLayout.rows}, minmax(0, 1fr))`,
-            }}
-          >
-            {allPeers.map((p, i) => renderTile(p, 'grid', tileColumn(i)))}
-          </div>
-        ) : null}
+        <div
+          ref={layoutRef}
+          className={`${styles.grid} ${panelOpen ? styles.gridNarrow : ''} ${alone ? styles.soloLayout : ''}`}
+          data-layout={layout.mode === 'grid' ? `grid-${layout.cols}x${layout.rows}` : layout.mode}
+          data-testid="call-layout"
+          style={{
+            gridTemplateColumns: `repeat(${alone ? (soloPortrait ? 1 : 2) : placement.columns}, minmax(0, 1fr))`,
+            gridTemplateRows: alone ? (soloPortrait ? 'minmax(0, 1fr) auto' : 'minmax(0, 1fr)') : placement.rows,
+          }}
+        >
+          {allPeers.map(renderTile)}
+          {alone && <div className={styles.soloInvite}><InviteCard roomId={roomId} url={inviteUrl} /></div>}
+        </div>
 
         {participantsOpen && (
           <div className={styles.participantsPanel}>

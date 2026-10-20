@@ -72,8 +72,8 @@ test.describe('call layout', () => {
     const spotlight = host.locator('[data-layout="spotlight"]')
     await expect(spotlight).toBeVisible()
     await expect(spotlight.locator('[data-variant="stage"]')).toHaveCount(1)
-    const strip = host.getByTestId('filmstrip')
-    await expect(strip.locator('[data-tile]')).toHaveCount(2)
+    const strip = host.locator('[data-layout="spotlight"]')
+    await expect(strip.locator('[data-variant="strip"]')).toHaveCount(2)
     await expect(strip.getByLabel('Focus Alice')).toBeVisible()
 
     await host.getByLabel('Stop focusing Bob').click()

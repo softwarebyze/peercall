@@ -226,3 +226,6 @@
   .productTiles { grid-template-columns: 1fr; min-height: 7rem; }
   .productYou { border-right: none; border-bottom: 1px solid var(--line); }
 }
+
+.previewCaption { display: block; padding: 0.5rem 0.75rem; font-size: 0.75rem; color: var(--text-dim); border-bottom: 1px solid var(--line); }
+.productFrame { pointer-events: none; user-select: none; }

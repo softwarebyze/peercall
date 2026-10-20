@@ -15,7 +15,17 @@ function parseRoomSearch(search: Record<string, unknown>): RoomSearch {
 export const Route = createFileRoute('/room/$roomId')({
   validateSearch: parseRoomSearch,
   head: () => ({
-    meta: [{ title: 'PeerCall — Join a call' }],
+    meta: [
+      { title: 'Join the call — PeerCall' },
+      { name: 'description', content: 'You’re invited. Check your camera and microphone, then join in your browser. No account needed.' },
+      { property: 'og:title', content: 'You’re invited — join the call on PeerCall' },
+      { property: 'og:description', content: 'Check your camera and microphone, then join. No account or download needed.' },
+      { property: 'og:image', content: 'https://peercall.fly.dev/og-join.png' },
+      { property: 'og:image:alt', content: 'You’re invited. Join the call in your browser with PeerCall.' },
+      { name: 'twitter:title', content: 'Join the call — PeerCall' },
+      { name: 'twitter:description', content: 'You’re invited. No account or download needed.' },
+      { name: 'twitter:image', content: 'https://peercall.fly.dev/og-join.png' },
+    ],
   }),
   component: RoomPage,
 })
