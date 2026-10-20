@@ -1,9 +1,10 @@
 import { encode } from 'uqr'
 
 export function QrCode(args: { text: string; size?: number; label: string }) {
-  const encoded = encode(args.text, { border: 2, ecc: 'M' })
+  const encoded = encode(args.text, { border: 4, ecc: 'M' })
   const cells = encoded.size
-  const px = args.size ?? 148
+  // Whole CSS pixels per module keep the edges sharp on laptop displays.
+  const px = Math.ceil((args.size ?? 196) / cells) * cells
   const dots: string[] = []
   for (let y = 0; y < cells; y++) {
     const row = encoded.data[y]
@@ -21,8 +22,8 @@ export function QrCode(args: { text: string; size?: number; label: string }) {
       aria-label={args.label}
       shapeRendering="crispEdges"
     >
-      <rect width={cells} height={cells} fill="#0d0d0f" />
-      <path d={dots.join('')} fill="#00ff88" />
+      <rect width={cells} height={cells} fill="#ffffff" />
+      <path d={dots.join('')} fill="#000000" />
     </svg>
   )
 }
