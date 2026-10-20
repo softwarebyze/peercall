@@ -113,6 +113,9 @@ export function QrScanner({ onScan, onClose }: QrScannerProps) {
         <div className={styles.scannerContainer}>
           <div className={styles.scanner}>
             <video ref={videoRef} muted playsInline autoPlay aria-label="QR scanner camera" />
+            <svg className={styles.scanFrame} viewBox="0 0 100 100" aria-hidden="true">
+              <path d="M0 18V0H18 M82 0H100V18 M100 82V100H82 M18 100H0V82" />
+            </svg>
           </div>
         </div>
         <p className={styles.hint}>
