@@ -14,14 +14,12 @@ interface QrScannerProps {
 }
 
 export function QrScanner({ onScan, onClose }: QrScannerProps) {
-  const readerId = 'qr-reader'
-  const statusRef = useRef<ScanStatus>({ kind: 'starting' })
+  const videoRef = useRef<HTMLVideoElement>(null)
   const [status, setStatus] = useState<ScanStatus>({ kind: 'starting' })
   const [paste, setPaste] = useState('')
   const [pasteError, setPasteError] = useState<string | null>(null)
 
   const applyStatus = (next: ScanStatus) => {
-    statusRef.current = next
     setStatus(next)
   }
 
@@ -48,42 +46,50 @@ export function QrScanner({ onScan, onClose }: QrScannerProps) {
 
   useEffect(() => {
     let disposed = false
-    let scanner: { stop: () => Promise<void>; isScanning: boolean } | null = null
-    let startPromise: Promise<void> = Promise.resolve()
+    let stream: MediaStream | null = null
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const stop = () => stream?.getTracks().forEach((track) => track.stop())
 
     void (async () => {
-      const { Html5Qrcode } = await import('html5-qrcode')
-      if (disposed) return
-      const instance = new Html5Qrcode(readerId)
-      scanner = instance
-      startPromise = instance.start(
-        { facingMode: 'environment' },
-        { fps: 10, qrbox: { width: 220, height: 220 }, aspectRatio: 1 },
-        (decodedText) => {
-          if (!disposed) submitText(decodedText, 'qr')
-        },
-        () => {},
-      ).then(() => undefined)
       try {
-        await startPromise
-        if (!disposed) applyStatus({ kind: 'live' })
-      } catch {
-        if (!disposed) {
-          applyStatus({
-            kind: 'camera_failed',
-            message: 'Camera unavailable. Paste a room link instead.',
-          })
+        const { scanQr } = await import('../lib/scanQr')
+        if (disposed) return
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { ideal: 'environment' } }, audio: false,
+        })
+        if (disposed) { stop(); return }
+        const video = videoRef.current!
+        video.srcObject = stream
+        await video.play()
+        if (disposed) { stop(); return }
+        applyStatus({ kind: 'live' })
+        const canvas = document.createElement('canvas')
+        const context = canvas.getContext('2d', { willReadFrequently: true })!
+        const scan = () => {
+          if (disposed) return
+          if (video.readyState >= 2 && video.videoWidth && video.videoHeight) {
+            const scale = Math.min(1, 640 / Math.max(video.videoWidth, video.videoHeight))
+            canvas.width = Math.round(video.videoWidth * scale)
+            canvas.height = Math.round(video.videoHeight * scale)
+            context.drawImage(video, 0, 0, canvas.width, canvas.height)
+            const frame = context.getImageData(0, 0, canvas.width, canvas.height)
+            const text = scanQr(frame.data, frame.width, frame.height)
+            if (text) submitText(text, 'qr')
+          }
+          if (!disposed) timer = setTimeout(scan, 100)
         }
+        scan()
+      } catch {
+        stop()
+        if (!disposed) applyStatus({ kind: 'camera_failed', message: 'Camera unavailable. Paste a room link instead.' })
       }
     })()
 
     return () => {
       disposed = true
-      const stop = () => {
-        if (scanner?.isScanning) void scanner.stop().catch(() => {})
-      }
-      if (scanner?.isScanning) stop()
-      else void startPromise.then(stop).catch(() => {})
+      clearTimeout(timer)
+      stop()
+      if (videoRef.current) videoRef.current.srcObject = null
     }
   }, [submitText])
 
@@ -105,7 +111,9 @@ export function QrScanner({ onScan, onClose }: QrScannerProps) {
           </button>
         </div>
         <div className={styles.scannerContainer}>
-          <div id={readerId} className={styles.scanner} />
+          <div className={styles.scanner}>
+            <video ref={videoRef} muted playsInline autoPlay aria-label="QR scanner camera" />
+          </div>
         </div>
         <p className={styles.hint}>
           {status.kind === 'camera_failed' ? status.message : 'Point the camera at a PeerCall room QR, or paste the link.'}

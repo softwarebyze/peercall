@@ -83,8 +83,7 @@
 }
 
 .scanner :global(video) {
+  width: 100%;
+  display: block;
   border: 1px solid var(--line-strong);
-}
-.scanner :global(img[alt="Info icon"]) {
-  display: none;
 }
