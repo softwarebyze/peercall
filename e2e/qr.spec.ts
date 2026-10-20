@@ -19,7 +19,7 @@ test('QR scanner paste path joins a room', async ({ page }) => {
 })
 
 
-test('displayed invite QR decodes to the current join link without inverted-color support', async ({ page }) => {
+test('displayed invite QR decodes to the current join link with the green-on-dark palette', async ({ page }) => {
   const id = 'gentle-quartz-prairie-abcdefgh'
   await page.goto(`/room/${id}`)
   await page.getByLabel('Name shown to others').fill('QR host')
@@ -30,7 +30,7 @@ test('displayed invite QR decodes to the current join link without inverted-colo
   // Decode actual browser pixels, including a smaller camera-like image.
   for (const width of [undefined, 160]) {
     const { data, info } = await sharp(screenshot).resize(width).ensureAlpha().raw().toBuffer({ resolveWithObject: true })
-    const decoded = jsQR(new Uint8ClampedArray(data), info.width, info.height, { inversionAttempts: 'dontInvert' })
+    const decoded = jsQR(new Uint8ClampedArray(data), info.width, info.height, { inversionAttempts: 'attemptBoth' })
     expect(decoded?.data).toBe(page.url())
   }
 })

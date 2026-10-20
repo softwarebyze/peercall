@@ -22,8 +22,8 @@ export function QrCode(args: { text: string; size?: number; label: string }) {
       aria-label={args.label}
       shapeRendering="crispEdges"
     >
-      <rect width={cells} height={cells} fill="#ffffff" />
-      <path d={dots.join('')} fill="#000000" />
+      <rect width={cells} height={cells} fill="#0d0d0f" />
+      <path d={dots.join('')} fill="#00ff88" />
     </svg>
   )
 }
