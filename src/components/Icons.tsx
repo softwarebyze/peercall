@@ -141,6 +141,15 @@ export function IconQr(props: IconProps) {
   )
 }
 
+export function IconShare(props: IconProps) {
+  return (
+    <svg {...svgProps(props)}>
+      <path d="M12 15V4M8 7.5 12 3.5l4 4" />
+      <path d="M5 12v7h14v-7" />
+    </svg>
+  )
+}
+
 export function IconCopy(props: IconProps) {
   return (
     <svg {...svgProps(props)}>

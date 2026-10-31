@@ -11,8 +11,9 @@ import { VideoTile } from './VideoTile'
 import { ControlsBar } from './ControlsBar'
 import { ChatPanel } from './ChatPanel'
 import { InviteCard } from './InviteCard'
-import { IconCopy, IconCheck, IconPeople, IconWarn } from './Icons'
+import { IconCopy, IconCheck, IconPeople, IconWarn, IconShare } from './Icons'
 import { captureCallScreenshot } from '../lib/screenshot'
+import { shareInvite } from '../lib/share'
 import { resolveLayout, type LayoutTile } from '../lib/layout'
 import { tileSlots } from '../lib/tileSlots'
 import type { MediaKind } from '../lib/devices'
@@ -242,6 +243,14 @@ function RoomSession(props: {
       setTimeout(() => setCopied(false), 2000)
     })
   }, [inviteUrl])
+
+  const shareRoom = useCallback(() => {
+    void shareInvite({ url: inviteUrl, roomId }).then((result) => {
+      if (result === 'shared') setToast('Invite shared')
+      else if (result === 'unavailable')
+        setToast("Sharing isn't available here — use Copy invite")
+    })
+  }, [inviteUrl, roomId])
 
   const allPeers = useMemo<CallPeer[]>(() => {
     const me: CallPeer = {
@@ -486,6 +495,16 @@ function RoomSession(props: {
           >
             {copied ? <IconCheck size={14} /> : <IconCopy size={14} />}
             {copied ? 'Copied' : 'Copy invite'}
+          </button>
+          <button
+            className="btn-ghost"
+            onClick={shareRoom}
+            type="button"
+            data-testid="share-invite"
+            style={{ fontSize: '0.75rem', padding: '0.3rem 0.6rem' }}
+          >
+            <IconShare size={14} />
+            Share
           </button>
           {recorder.recording && (
             <span className={styles.recBadge} data-testid="rec-pill">

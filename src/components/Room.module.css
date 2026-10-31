@@ -663,6 +663,12 @@
   border: 1px solid var(--line);
   width: 100%;
 }
+.inviteActions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  justify-content: center;
+}
 .inviteQr {
   padding: 0.4rem;
   border: 1px solid var(--line);
