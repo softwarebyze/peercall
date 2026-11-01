@@ -14,6 +14,7 @@ const browser = await chromium.launch({
   ],
 })
 const room = `screen-check-${Date.now()}`
+const pageErrors: string[] = []
 
 async function join(name: string, host = false) {
   const context = await browser.newContext()
@@ -48,7 +49,7 @@ async function join(name: string, host = false) {
     }
   }, name)
   const page = await context.newPage()
-  page.on('pageerror', (error) => console.error(`${name}: ${error.message}`))
+  page.on('pageerror', (error) => pageErrors.push(`${name}: ${error.message}`))
   await page.goto(`${process.env.BASE_URL ?? 'http://localhost:3000'}/room/${room}${host ? '?host=1' : ''}`)
   await page.getByRole('button', { name: 'Join call', exact: true }).click()
   return page
@@ -154,6 +155,7 @@ try {
   })
   await Promise.all([playing(alice, 3), playing(bob, 3), playing(cara, 3)])
   console.log('PASS: browser capture ending removes screen tiles and preserves cameras')
+  assert.deepEqual(pageErrors, [], 'No browser runtime errors')
 } finally {
   await browser.close()
 }

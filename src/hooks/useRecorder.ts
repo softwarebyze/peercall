@@ -181,7 +181,8 @@ export function useRecorder(screenStream: MediaStream | null = null): RecorderSt
         }
 
         // Feed the canvas frame to the encoder using elapsed recording time.
-        const ts = (now - startTimeRef.current) / 1000
+        // RAF can report the start of a frame that predates output.start().
+        const ts = Math.max(0, now - startTimeRef.current) / 1000
         // Respect encoder backpressure instead of accumulating frames in memory.
         encodingRef.current = videoSource.add(ts, 1 / 30).finally(() => {
           encodingRef.current = null
