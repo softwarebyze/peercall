@@ -14,7 +14,7 @@ export interface RecorderState {
   stop: () => Promise<RecorderStop>
 }
 
-type VideoSource = { add: (timestamp: number, duration: number) => void }
+type VideoSource = { add: (timestamp: number, duration: number) => Promise<void> }
 
 type OutputHandle = {
   state: string
@@ -25,19 +25,38 @@ type OutputHandle = {
 
 const CODECS = ['avc', 'av1'] as const
 
-export function useRecorder(): RecorderState {
+export function useRecorder(screenStream: MediaStream | null = null): RecorderState {
   const [recording, setRecording] = useState(false)
   const [duration, setDuration] = useState(0)
   const outputRef = useRef<OutputHandle | null>(null)
   const rafRef = useRef(0)
   const durationIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
-  const framesRef = useRef(0)
   const startTimeRef = useRef(0)
   const videoElRef = useRef<HTMLVideoElement | null>(null)
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const ctxRef = useRef<CanvasRenderingContext2D | null>(null)
   const videoSourceRef = useRef<VideoSource | null>(null)
   const stopRef = useRef<() => Promise<RecorderStop>>(async () => ({ kind: 'idle' }))
+
+  const screenElRef = useRef<HTMLVideoElement | null>(null)
+  const encodingRef = useRef<Promise<void> | null>(null)
+
+  // Decode the screen only while recording. Updating this element lets an
+  // existing recording follow shares starting/stopping without a new encoder.
+  useEffect(() => {
+    if (!recording || !screenStream) return
+    const video = document.createElement('video')
+    video.srcObject = screenStream
+    video.muted = true
+    video.playsInline = true
+    screenElRef.current = video
+    void video.play().catch(() => {})
+    return () => {
+      video.pause()
+      video.srcObject = null
+      if (screenElRef.current === video) screenElRef.current = null
+    }
+  }, [recording, screenStream])
 
   const resetLoop = () => {
     if (rafRef.current) {
@@ -95,15 +114,11 @@ export function useRecorder(): RecorderState {
           const output = new Output({
             format: new Mp4OutputFormat(),
             target: new BufferTarget(),
-          }) as OutputHandle & {
-            addVideoTrack: (source: VideoSource, opts: { frameRate: number }) => void
-            addAudioTrack: (source: unknown) => void
-            start: () => Promise<void>
-          }
+          })
           const videoSource = new CanvasSource(canvas, {
             codec,
             bitrate: 2_000_000,
-          }) as VideoSource
+          })
           output.addVideoTrack(videoSource, { frameRate: 30 })
           if (audioTrack) {
             const audioSource = new MediaStreamAudioTrackSource(audioTrack, {
@@ -135,7 +150,6 @@ export function useRecorder(): RecorderState {
       outputRef.current = started.output
       videoSourceRef.current = started.videoSource
       startTimeRef.current = performance.now()
-      framesRef.current = 0
 
       let lastFrameTime = 0
       const frameInterval = 1000 / 30
@@ -145,13 +159,34 @@ export function useRecorder(): RecorderState {
       const tick = (now: number) => {
         rafRef.current = requestAnimationFrame(tick)
         if (output.state !== 'started') return
-        if (!videoEl.videoWidth) return
+        if (!videoEl.videoWidth || encodingRef.current) return
         if (now - lastFrameTime < frameInterval) return
         lastFrameTime = now
-        ctx.drawImage(videoEl, 0, 0, canvas.width, canvas.height)
-        const ts = framesRef.current / 30
-        videoSource.add(ts, 1 / 30)
-        framesRef.current++
+        // Draw current video frame to canvas (synchronous, fast)
+        const screen = screenElRef.current
+        if (screen && screen.readyState >= 2 && screen.videoWidth > 0) {
+          // Fit the entire presentation, with the camera visible in a corner.
+          const scale = Math.min(canvas.width / screen.videoWidth, canvas.height / screen.videoHeight)
+          const width = screen.videoWidth * scale
+          const height = screen.videoHeight * scale
+          ctx.fillStyle = '#000'
+          ctx.fillRect(0, 0, canvas.width, canvas.height)
+          ctx.drawImage(screen, (canvas.width - width) / 2, (canvas.height - height) / 2, width, height)
+          const cameraWidth = canvas.width / 4
+          const cameraHeight = cameraWidth * videoEl.videoHeight / videoEl.videoWidth
+          ctx.drawImage(videoEl, canvas.width - cameraWidth - 16, canvas.height - cameraHeight - 16,
+            cameraWidth, cameraHeight)
+        } else {
+          ctx.drawImage(videoEl, 0, 0, canvas.width, canvas.height)
+        }
+
+        // Feed the canvas frame to the encoder using elapsed recording time.
+        // RAF can report the start of a frame that predates output.start().
+        const ts = Math.max(0, now - startTimeRef.current) / 1000
+        // Respect encoder backpressure instead of accumulating frames in memory.
+        encodingRef.current = videoSource.add(ts, 1 / 30).finally(() => {
+          encodingRef.current = null
+        })
       }
 
       rafRef.current = requestAnimationFrame(tick)
@@ -181,6 +216,7 @@ export function useRecorder(): RecorderState {
     resetLoop()
 
     try {
+      await encodingRef.current
       await output.finalize()
     } catch {
       setRecording(false)

@@ -5,6 +5,7 @@ import { IconMicOff, IconScreen, IconFocus, IconUnfocus } from './Icons'
 
 interface VideoTileProps {
   name: string
+  label?: string
   stream: MediaStream | null
   isLocal: boolean
   isHost: boolean
@@ -65,6 +66,7 @@ function useTrackMuted(stream: MediaStream | null, kind: 'video' | 'audio'): boo
 
 export function VideoTile({
   name,
+  label,
   stream,
   isLocal,
   isHost,
@@ -104,10 +106,10 @@ export function VideoTile({
   }, [sinkId, stream])
 
   const remoteVideoMuted = useTrackMuted(isLocal ? null : stream, 'video')
-  const remoteAudioMuted = useTrackMuted(isLocal ? null : stream, 'audio')
+  const remoteAudioMuted = useTrackMuted(isLocal || sharing ? null : stream, 'audio')
 
   const micMuted = micOff ?? remoteAudioMuted
-  const level = useMicLevel({ stream, active: !micMuted })
+  const level = useMicLevel({ stream, active: !sharing && !micMuted })
   const audioActive = !micMuted && level > 0.05
   const noVideo = !stream || (isLocal ? !!videoOff : remoteVideoMuted)
   const showConnectionIssue =
@@ -117,7 +119,7 @@ export function VideoTile({
     <div
       className={`${styles.tile} ${styles[`tile_${variant}`] ?? ''}`}
       data-tile
-      data-tile-name={isLocal ? `${name} (you)` : name}
+      data-tile-name={label ?? (isLocal ? `${name} (you)` : name)}
       data-variant={variant}
       data-sharing={sharing ? 'true' : undefined}
       data-focused={focused ? 'true' : undefined}
@@ -129,7 +131,7 @@ export function VideoTile({
         style={noVideo ? { visibility: 'hidden' } : undefined}
         autoPlay
         playsInline
-        muted={isLocal}
+        muted={isLocal || sharing}
       />
       {onToggleFocus && (
         <button
@@ -150,8 +152,8 @@ export function VideoTile({
             {showConnectionIssue
               ? (stateLabel[connectionState!] ?? connectionState)
               : stream || videoOff
-                ? 'Camera off'
-                : 'Waiting for camera…'}
+                ? (sharing ? 'Waiting for screen…' : 'Camera off')
+                : (sharing ? 'Connecting screen share…' : 'Waiting for camera…')}
           </span>
         </div>
       )}
@@ -169,8 +171,8 @@ export function VideoTile({
             <IconScreen size={12} /> Presenting
           </span>
         )}
-        <span>{isLocal ? `${name} (you)` : name}</span>
-        {micMuted && (
+        <span>{label ?? (isLocal ? `${name} (you)` : name)}</span>
+        {micMuted && !sharing && (
           <span className={styles.mutedBadge} title="Microphone muted">
             <IconMicOff size={12} />
           </span>
