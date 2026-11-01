@@ -1,26 +1,13 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
+import { parseSignalMsg, type ChatEntry, type PeerInfo, type SignalMsg } from '../lib/signalMsg'
+
+export type { ChatEntry, PeerInfo, SignalMsg }
 
 function getSignalUrl(): string {
   if (typeof window === 'undefined') return ''
   const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
   return `${proto}//${window.location.host}/signal`
 }
-
-export type PeerInfo = { id: string; name: string; isHost: boolean; sharingScreen?: boolean }
-export type ChatEntry = { id: string; from: string; name: string; text: string; ts: number }
-
-export type SignalMsg =
-  | { t: 'joined'; payload: { id: string; roomId: string; isHost: boolean } }
-  | { t: 'room_state'; payload: { peers: PeerInfo[]; chat: ChatEntry[] } }
-  | { t: 'peer_joined'; payload: { id: string; name: string; isHost: boolean } }
-  | { t: 'peer_left'; payload: { id: string } }
-  | { t: 'screen_state'; payload: { id: string; sharing: boolean } }
-  | { t: 'offer'; payload: { from: string; data: RTCSessionDescriptionInit } }
-  | { t: 'answer'; payload: { from: string; data: RTCSessionDescriptionInit } }
-  | { t: 'ice'; payload: { from: string; data: RTCIceCandidateInit } }
-  | { t: 'chat'; payload: ChatEntry }
-  | { t: 'call_ended'; payload: { by: string } }
-  | { t: 'error'; payload: { message: string } }
 
 type SignalHandler = (msg: SignalMsg) => void
 
@@ -59,6 +46,24 @@ export function useSignaling(opts: {
       if (closed) return
       const ws = new WebSocket(getSignalUrl())
       wsRef.current = ws
+      let lastFrameAt = Date.now()
+      let heartbeat: ReturnType<typeof setInterval> | undefined
+      const probe = () => {
+        if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ t: 'ping', payload: {} }))
+      }
+      const resumed = () => {
+        if (document.visibilityState !== 'visible') return
+        // Background tabs can suspend timers; give a resumed page a fresh
+        // response window instead of treating that suspension as a dead link.
+        lastFrameAt = Date.now()
+        probe()
+      }
+      const stopHeartbeat = () => {
+        clearInterval(heartbeat)
+        document.removeEventListener('visibilitychange', resumed)
+        window.removeEventListener('online', resumed)
+      }
+      ws.addEventListener('close', stopHeartbeat, { once: true })
 
       if (!everConnected && attempt === 0) {
         wakingTimer = setTimeout(() => {
@@ -73,19 +78,36 @@ export function useSignaling(opts: {
         }
         attempt = 0
         ws.send(JSON.stringify({ t: 'join', payload: { roomId, name, isHost } }))
+        lastFrameAt = Date.now()
+        document.addEventListener('visibilitychange', resumed)
+        window.addEventListener('online', resumed)
+        heartbeat = setInterval(() => {
+          if (closed || wsRef.current !== ws) { stopHeartbeat(); return }
+          if (document.visibilityState !== 'visible') return
+          if (Date.now() - lastFrameAt > 60000) { ws.close(); return }
+          probe()
+        }, 20000)
       }
       ws.onmessage = (ev) => {
         if (closed) return
+        lastFrameAt = Date.now()
+        let parsedJson: unknown
         try {
-          const msg: SignalMsg = JSON.parse(ev.data)
-          if (msg.t === 'joined') {
-            everConnected = true
-            if (wakingTimer) clearTimeout(wakingTimer)
-            setMyId(msg.payload.id)
-            setStatus('connected')
-          }
-          handlerRef.current(msg)
-        } catch {}
+          parsedJson = JSON.parse(typeof ev.data === 'string' ? ev.data : String(ev.data))
+        } catch {
+          return
+        }
+        const parsed = parseSignalMsg(parsedJson)
+        if (parsed.kind === 'invalid') return
+        const msg = parsed.msg
+        if (msg.t === 'pong') return
+        if (msg.t === 'joined') {
+          everConnected = true
+          if (wakingTimer) clearTimeout(wakingTimer)
+          setMyId(msg.payload.id)
+          setStatus('connected')
+        }
+        handlerRef.current(msg)
       }
       ws.onclose = () => {
         if (closed) return

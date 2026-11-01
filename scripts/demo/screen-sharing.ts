@@ -49,8 +49,8 @@ async function join(name: string, host = false) {
   }, name)
   const page = await context.newPage()
   page.on('pageerror', (error) => console.error(`${name}: ${error.message}`))
-  await page.goto(`http://localhost:3000/room/${room}${host ? '?host=1' : ''}`)
-  if (!host) await page.getByRole('button', { name: 'Join', exact: true }).click()
+  await page.goto(`${process.env.BASE_URL ?? 'http://localhost:3000'}/room/${room}${host ? '?host=1' : ''}`)
+  await page.getByRole('button', { name: 'Join call', exact: true }).click()
   return page
 }
 
@@ -84,7 +84,7 @@ try {
   const before = await Promise.all([offers(alice), offers(bob)])
   const cameraId = (await senderState(alice))[0][0].id
 
-  await alice.getByTitle('Share your screen', { exact: true }).click()
+  await alice.getByTitle('Share screen', { exact: true }).click()
   await Promise.all([playing(alice, 3), playing(bob, 3)])
   const senders = (await senderState(alice))[0]
   assert.equal(senders.length, 2)
@@ -93,7 +93,7 @@ try {
   assert.equal(senders[1].maxBitrate, 2_500_000)
   console.log('PASS: camera + screen reach both participants; sender bitrate caps applied')
 
-  await bob.getByTitle('Share your screen', { exact: true }).click()
+  await bob.getByTitle('Share screen', { exact: true }).click()
   await Promise.all([playing(alice, 4), playing(bob, 4)])
   console.log('PASS: both participants can share simultaneously')
 
@@ -111,11 +111,11 @@ try {
     const videos = pc.getSenders().filter((s) => s.track?.kind === 'video')
     return videos[0].track?.id !== cameraId && videos[1].track?.id === screenId
   }, { cameraId, screenId })
-  await alice.getByTitle('Device settings').click()
+  await alice.getByRole('button', { name: 'Close devices', exact: true }).click()
 
-  await alice.getByTitle('Stop sharing your screen', { exact: true }).click()
+  await alice.getByTitle('Stop sharing', { exact: true }).click()
   await Promise.all([playing(alice, 3), playing(bob, 3)])
-  await alice.getByTitle('Share your screen', { exact: true }).click()
+  await alice.getByTitle('Share screen', { exact: true }).click()
   await Promise.all([playing(alice, 4), playing(bob, 4)])
   assert.deepEqual(await Promise.all([offers(alice), offers(bob)]), before,
     'Starting and stopping shares must not renegotiate')
@@ -126,22 +126,22 @@ try {
   console.log('PASS: late joiner receives both active screen shares and all cameras')
 
   await alice.getByTitle('Start recording', { exact: true }).click()
-  await alice.getByRole('button', { name: '⏹ Stop recording', exact: true }).waitFor()
+  await alice.getByRole('button', { name: 'Stop recording', exact: true }).waitFor()
   await alice.waitForFunction(() => {
     const draws = (window as unknown as { testRecordingDraws: { screen: number; inset: number } }).testRecordingDraws
     return draws.screen > 0 && draws.inset > 0
   })
-  assert(await alice.getByRole('button', { name: '🖥 Stop sharing', exact: true }).isVisible())
-  await alice.getByTitle('Stop sharing your screen', { exact: true }).click()
-  await alice.getByRole('button', { name: '⏹ Stop recording', exact: true }).waitFor()
-  await alice.getByTitle('Share your screen', { exact: true }).click()
+  assert(await alice.getByRole('button', { name: 'Stop sharing', exact: true }).isVisible())
+  await alice.getByTitle('Stop sharing', { exact: true }).click()
+  await alice.getByRole('button', { name: 'Stop recording', exact: true }).waitFor()
+  await alice.getByTitle('Share screen', { exact: true }).click()
   await Promise.all([playing(alice, 5), playing(bob, 5)])
   const download = alice.waitForEvent('download')
-  await alice.getByRole('button', { name: '⏹ Stop recording', exact: true }).click()
+  await alice.getByRole('button', { name: 'Stop recording', exact: true }).click()
   assert.match((await download).suggestedFilename(), /\.mp4$/)
   assert(await alice.getByTitle('Start recording', { exact: true }).isVisible())
-  assert(await alice.getByTitle('Stop sharing your screen', { exact: true }).isVisible())
-  await alice.getByTitle('Stop sharing your screen', { exact: true }).click()
+  assert(await alice.getByTitle('Stop sharing', { exact: true }).isVisible())
+  await alice.getByTitle('Stop sharing', { exact: true }).click()
   console.log('PASS: recording composites screen + camera; both stop controls act independently; MP4 downloads')
 
   // Simulate the browser's own Stop sharing control by ending its capture track.

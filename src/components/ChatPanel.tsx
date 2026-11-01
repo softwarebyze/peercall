@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import type { ChatEntry } from '../hooks/useSignaling'
 import styles from './Room.module.css'
+import { IconSend } from './Icons'
 
 interface ChatPanelProps {
   chat: ChatEntry[]
@@ -29,7 +30,9 @@ export function ChatPanel({ chat, myId, onSend }: ChatPanelProps) {
     <div className={styles.chatPanel}>
       <div className={styles.chatHeader}>
         <span style={{ fontWeight: 600, fontSize: '0.8rem' }}>Chat</span>
-        <span className="dim" style={{ fontSize: '0.7rem' }}>{chat.length} messages</span>
+        <span className="dim" style={{ fontSize: '0.7rem' }}>
+          {chat.length} {chat.length === 1 ? 'message' : 'messages'}
+        </span>
       </div>
       <div className={styles.chatMessages} ref={scrollRef}>
         {chat.map((entry) => (
@@ -42,7 +45,7 @@ export function ChatPanel({ chat, myId, onSend }: ChatPanelProps) {
         ))}
         {chat.length === 0 && (
           <div className="dim" style={{ fontSize: '0.8rem', padding: '1rem' }}>
-            No messages yet. Say hello!
+            No messages yet.
           </div>
         )}
       </div>
@@ -56,8 +59,8 @@ export function ChatPanel({ chat, myId, onSend }: ChatPanelProps) {
           maxLength={2000}
           style={{ flex: 1, minWidth: 0 }}
         />
-        <button className="btn-primary" onClick={send} disabled={!text.trim()}>
-          →
+        <button className="btn-primary" onClick={send} disabled={!text.trim()} type="button" aria-label="Send">
+          <IconSend size={16} />
         </button>
       </div>
     </div>

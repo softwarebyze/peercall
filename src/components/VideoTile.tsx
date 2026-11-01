@@ -1,22 +1,33 @@
-import { useRef, useEffect, useState } from 'react'
+import { useRef, useEffect, useState, type CSSProperties } from 'react'
+import { useMicLevel } from '../hooks/useMicLevel'
 import styles from './Room.module.css'
+import { IconMicOff, IconScreen, IconFocus, IconUnfocus } from './Icons'
 
 interface VideoTileProps {
   name: string
+  label?: string
   stream: MediaStream | null
   isLocal: boolean
   isHost: boolean
   connectionState?: RTCPeerConnectionState
   /** Local-only: we know our own camera state directly. */
   videoOff?: boolean
-  /** Local-only: we know our own mic state directly. */
+  /** Explicit local or signaled remote microphone state. */
   micOff?: boolean
-  /** Override the default name (used for screen-share tiles). */
-  label?: string
-  /** Screen shares use contain-fit so content isn’t cropped. */
-  variant?: 'camera' | 'screen'
-  /** Status shown when a tile has no video yet. */
-  emptyLabel?: string
+  sinkId?: string | null
+  /** Where this tile is rendered — affects fit and chrome. */
+  variant?: 'grid' | 'strip' | 'stage'
+  /** This participant is sharing their screen. */
+  sharing?: boolean
+  /** This tile is the one being spotlighted. */
+  focused?: boolean
+  /** Rendered only when focus can be toggled (not in the lobby). */
+  onToggleFocus?: () => void
+  /** CSS `grid-column`, so a short last row can be centered. */
+  gridColumn?: string
+  gridRow?: string
+  stripOffset?: number
+  stripCount?: number
 }
 
 const stateLabel: Partial<Record<RTCPeerConnectionState, string>> = {
@@ -26,8 +37,7 @@ const stateLabel: Partial<Record<RTCPeerConnectionState, string>> = {
   failed: 'Connection failed',
 }
 
-/** Track remote video/audio availability: a disabled remote track stops
- * producing frames, which fires `mute` on the receiving side. */
+/** Track transport availability, separate from the sender's explicit mute intent. */
 function useTrackMuted(stream: MediaStream | null, kind: 'video' | 'audio'): boolean {
   const [muted, setMuted] = useState(false)
   useEffect(() => {
@@ -56,61 +66,95 @@ function useTrackMuted(stream: MediaStream | null, kind: 'video' | 'audio'): boo
 
 export function VideoTile({
   name,
+  label,
   stream,
   isLocal,
   isHost,
   connectionState,
   videoOff,
   micOff,
-  label,
-  variant = 'camera',
-  emptyLabel,
+  sinkId,
+  variant = 'grid',
+  sharing = false,
+  focused = false,
+  onToggleFocus,
+  gridColumn,
+  gridRow,
+  stripOffset,
+  stripCount,
 }: VideoTileProps) {
   const videoRef = useRef<HTMLVideoElement>(null)
   const streamRef = useRef<MediaStream | null>(null)
-  const isScreen = variant === 'screen'
 
   // Force srcObject update when stream reference changes (covers mount + track swap)
   useEffect(() => {
-    if (videoRef.current && stream && streamRef.current !== stream) {
+    if (videoRef.current && streamRef.current !== stream) {
       videoRef.current.srcObject = stream
       streamRef.current = stream
     }
   }, [stream])
 
-  const remoteVideoMuted = useTrackMuted(isLocal ? null : stream, 'video')
-  const remoteAudioMuted = useTrackMuted(isLocal || isScreen ? null : stream, 'audio')
+  useEffect(() => {
+    const el = videoRef.current
+    return () => { if (el) el.srcObject = null }
+  }, [])
 
+  useEffect(() => {
+    const el = videoRef.current
+    if (!el || !sinkId || !('setSinkId' in el)) return
+    void el.setSinkId(sinkId).catch(() => {})
+  }, [sinkId, stream])
+
+  const remoteVideoMuted = useTrackMuted(isLocal ? null : stream, 'video')
+  const remoteAudioMuted = useTrackMuted(isLocal || sharing ? null : stream, 'audio')
+
+  const micMuted = micOff ?? remoteAudioMuted
+  const level = useMicLevel({ stream, active: !sharing && !micMuted })
+  const audioActive = !micMuted && level > 0.05
   const noVideo = !stream || (isLocal ? !!videoOff : remoteVideoMuted)
-  const micMuted = isLocal ? !!micOff : remoteAudioMuted
   const showConnectionIssue =
     !isLocal && connectionState && connectionState !== 'connected' && connectionState !== 'closed'
 
-  const waitingLabel = isScreen
-    ? (emptyLabel ?? 'Waiting for screen…')
-    : connectionState && showConnectionIssue
-      ? (stateLabel[connectionState] ?? connectionState)
-      : 'Waiting for camera…'
-
   return (
-    <div className={`${styles.tile} ${isScreen ? styles.tileScreen : ''}`}>
+    <div
+      className={`${styles.tile} ${styles[`tile_${variant}`] ?? ''}`}
+      data-tile
+      data-tile-name={label ?? (isLocal ? `${name} (you)` : name)}
+      data-variant={variant}
+      data-sharing={sharing ? 'true' : undefined}
+      data-focused={focused ? 'true' : undefined}
+      style={{ gridColumn, gridRow, '--strip-offset': stripOffset, '--strip-count': stripCount } as CSSProperties}
+    >
       <video
         ref={videoRef}
-        className={`${styles.video} ${isScreen ? styles.videoScreen : ''}`}
+        className={variant === 'stage' || sharing ? styles.videoContain : styles.video}
         style={noVideo ? { visibility: 'hidden' } : undefined}
         autoPlay
         playsInline
-        muted={isLocal || isScreen}
+        muted={isLocal || sharing}
       />
+      {onToggleFocus && (
+        <button
+          type="button"
+          className={`${styles.focusBtn} ${focused ? styles.focusBtnActive : ''}`}
+          onClick={onToggleFocus}
+          aria-pressed={focused}
+          aria-label={focused ? `Stop focusing ${name}` : `Focus ${name}`}
+          title={focused ? 'Restore grid (your view only)' : 'Enlarge (your view only)'}
+        >
+          {focused ? <IconUnfocus size={14} /> : <IconFocus size={14} />}
+        </button>
+      )}
       {noVideo && (
         <div className={styles.noVideo}>
           <span className={styles.avatar}>{name.charAt(0).toUpperCase()}</span>
-          {!stream && <span className={styles.connectionBadge}>{waitingLabel}</span>}
-          {stream && (isLocal ? videoOff : remoteVideoMuted) && (
-            <span className={styles.connectionBadge}>
-              {isScreen ? (emptyLabel ?? 'Waiting for screen…') : 'Camera off'}
-            </span>
-          )}
+          <span className={styles.connectionBadge}>
+            {showConnectionIssue
+              ? (stateLabel[connectionState!] ?? connectionState)
+              : stream || videoOff
+                ? (sharing ? 'Waiting for screen…' : 'Camera off')
+                : (sharing ? 'Connecting screen share…' : 'Waiting for camera…')}
+          </span>
         </div>
       )}
       {stream && !noVideo && showConnectionIssue && (
@@ -119,13 +163,21 @@ export function VideoTile({
         </div>
       )}
       <div className={styles.tileLabel}>
-        <span>{label ?? (isLocal ? `${name} (you)` : name)}</span>
-        {micMuted && stream && !isScreen && (
-          <span className={styles.mutedBadge} title="Microphone muted">
-            🎙✕
+        <span className={styles.peerAudio} data-testid="peer-audio-level" data-active={audioActive ? 'true' : 'false'} title={`Audio activity: ${name}`} aria-hidden>
+          {[0, 1, 2].map(i => <i key={i} style={{ opacity: audioActive && level > i / 3 ? 1 : 0.2 }} />)}
+        </span>
+        {sharing && (
+          <span className={styles.presentBadge} title="Sharing their screen">
+            <IconScreen size={12} /> Presenting
           </span>
         )}
-        {isHost && <span className={styles.hostBadge}>HOST</span>}
+        <span>{label ?? (isLocal ? `${name} (you)` : name)}</span>
+        {micMuted && !sharing && (
+          <span className={styles.mutedBadge} title="Microphone muted">
+            <IconMicOff size={12} />
+          </span>
+        )}
+        {isHost && <span className={styles.hostBadge} title="Can end the call for everyone. Controls transfer if the host disconnects.">HOST</span>}
       </div>
     </div>
   )

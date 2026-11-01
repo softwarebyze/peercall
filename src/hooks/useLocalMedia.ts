@@ -1,0 +1,137 @@
+import { useCallback, useEffect, useRef, useState } from 'react'
+
+export type MediaHandoff =
+  | { kind: 'stream'; stream: MediaStream; cameraOn: boolean; micOn: boolean }
+  | { kind: 'listen' }
+
+export type LocalMediaState =
+  | { kind: 'pending' }
+  | { kind: 'live'; stream: MediaStream; hasVideo: boolean; hasAudio: boolean }
+  | { kind: 'blocked'; reason: 'denied' | 'missing' | 'unknown'; message: string }
+
+function errorName(err: unknown): string {
+  if (typeof err === 'object' && err !== null && 'name' in err && typeof err.name === 'string') {
+    return err.name
+  }
+  return ''
+}
+
+function classify(err: unknown): { reason: 'denied' | 'missing' | 'unknown'; message: string } {
+  const name = errorName(err)
+  if (name === 'NotAllowedError' || name === 'PermissionDeniedError') {
+    return { reason: 'denied', message: 'Camera/mic access denied.' }
+  }
+  if (name === 'NotReadableError' || name === 'TrackStartError') {
+    return { reason: 'unknown', message: 'Camera or microphone is busy. Close other apps using it, then retry here.' }
+  }
+  if (name === 'NotFoundError' || name === 'DevicesNotFoundError') {
+    return { reason: 'missing', message: 'No camera or mic found on this device.' }
+  }
+  return { reason: 'unknown', message: 'Could not access camera or mic.' }
+}
+
+function stopStream(stream: MediaStream | null) {
+  stream?.getTracks().forEach((t) => t.stop())
+}
+
+export function useLocalMedia() {
+  const [state, setState] = useState<LocalMediaState>({ kind: 'pending' })
+  const streamRef = useRef<MediaStream | null>(null)
+  const handedOff = useRef(false)
+  // getUserMedia can resolve after the lobby has unmounted (Back pressed while
+  // the permission prompt was up). Cleanup only stops the stream it already
+  // has, so without this the late stream's tracks stay live forever.
+  const disposed = useRef(false)
+  const requestId = useRef(0)
+
+  const applyStream = (stream: MediaStream, request: number) => {
+    if (disposed.current || request !== requestId.current) {
+      stopStream(stream)
+      return
+    }
+    stopStream(streamRef.current)
+    streamRef.current = stream
+    setState({
+      kind: 'live',
+      stream,
+      hasVideo: stream.getVideoTracks().length > 0,
+      hasAudio: stream.getAudioTracks().length > 0,
+    })
+  }
+
+  const acquire = useCallback(async (args: { video: boolean; audio: boolean }) => {
+    const request = ++requestId.current
+    const current = () => !disposed.current && request === requestId.current
+    setState({ kind: 'pending' })
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: args.video,
+        audio: args.audio,
+      })
+      applyStream(stream, request)
+    } catch (err) {
+      if (!current()) return
+      if (args.video && args.audio) {
+        try {
+          const audioOnly = await navigator.mediaDevices.getUserMedia({ video: false, audio: true })
+          applyStream(audioOnly, request)
+          return
+        } catch (audioErr) {
+          if (!current()) return
+          stopStream(streamRef.current)
+          streamRef.current = null
+          setState({ kind: 'blocked', ...classify(audioErr) })
+          return
+        }
+      }
+      if (!current()) return
+      stopStream(streamRef.current)
+      streamRef.current = null
+      setState({ kind: 'blocked', ...classify(err) })
+    }
+  }, [])
+
+  useEffect(() => {
+    disposed.current = false
+    void acquire({ video: true, audio: true })
+    return () => {
+      disposed.current = true
+      requestId.current++
+      if (!handedOff.current) stopStream(streamRef.current)
+    }
+  }, [acquire])
+
+  const retry = useCallback(() => {
+    handedOff.current = false
+    void acquire({ video: true, audio: true })
+  }, [acquire])
+
+  const audioOnly = useCallback(() => {
+    handedOff.current = false
+    void acquire({ video: false, audio: true })
+  }, [acquire])
+
+  const handoff = useCallback(
+    (args: { cameraOn: boolean; micOn: boolean; listen: boolean }): MediaHandoff => {
+      // Nothing is handed to the room here, so the lobby still owns the
+      // stream and must stop it on unmount.
+      if (args.listen || state.kind !== 'live') return { kind: 'listen' }
+      handedOff.current = true
+      state.stream.getVideoTracks().forEach((t) => {
+        t.enabled = args.cameraOn
+      })
+      state.stream.getAudioTracks().forEach((t) => {
+        t.enabled = args.micOn
+      })
+      return {
+        kind: 'stream',
+        stream: state.stream,
+        cameraOn: args.cameraOn,
+        micOn: args.micOn,
+      }
+    },
+    [state],
+  )
+
+  return { state, retry, audioOnly, handoff }
+}

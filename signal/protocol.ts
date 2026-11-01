@@ -9,6 +9,8 @@ export interface Peer {
   id: PeerId;
   name: string;
   isHost: boolean;
+  sharing: boolean;
+  micOn: boolean;
   ws: ServerWebSocket<unknown>;
   room: RoomId;
 }
@@ -18,12 +20,10 @@ export interface Room {
   peers: Map<PeerId, Peer>;
   hostId: PeerId | null;
   chat: { id: string; from: PeerId; name: string; text: string; ts: number }[];
-  // Peers currently sharing a screen. Kept on the server so participants who
-  // join mid-share (or reconnect) immediately know to expect a screen track.
-  screenSharers: Set<PeerId>;
 }
 
 export const rooms = new Map<RoomId, Room>();
+const peerByWs = new WeakMap<ServerWebSocket<unknown>, PeerId>();
 
 const STUN_SERVERS: RTCIceServer[] = [
   { urls: "stun:stun.l.google.com:19302" },
@@ -97,16 +97,24 @@ export function broadcastRoomState(room: Room) {
     id: p.id,
     name: p.name,
     isHost: p.id === room.hostId,
-    sharingScreen: room.screenSharers.has(p.id),
+    sharing: p.sharing,
+    micOn: p.micOn,
   }));
   for (const p of room.peers.values()) {
     p.ws.send(pack("room_state", { peers, chat: room.chat }));
   }
 }
 
+/** Locate the room a peer id currently belongs to, if any. */
+function findRoomOfPeer(peerId: PeerId): Room | undefined {
+  for (const room of rooms.values()) {
+    if (room.peers.has(peerId)) return room;
+  }
+  return undefined;
+}
+
 export function leaveRoom(room: Room, peer: Peer) {
   room.peers.delete(peer.id);
-  room.screenSharers.delete(peer.id);
   for (const other of room.peers.values()) {
     other.ws.send(pack("peer_left", { id: peer.id }));
   }
@@ -120,96 +128,181 @@ export function leaveRoom(room: Room, peer: Peer) {
   }
 }
 
-export function handleMessage(ws: ServerWebSocket<unknown>, raw: string | Buffer) {
-  let msg: { t: string; payload: any };
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+function parseWire(raw: string | Buffer): { t: string; payload: unknown } | null {
+  let parsed: unknown;
   try {
-    msg = JSON.parse(raw.toString());
+    parsed = JSON.parse(raw.toString());
   } catch {
+    return null;
+  }
+  if (!isRecord(parsed) || typeof parsed.t !== "string") return null;
+  return { t: parsed.t, payload: parsed.payload };
+}
+
+// Display names and room codes are echoed to every peer, so cap them.
+const MAX_NAME_LENGTH = 40;
+const MAX_ROOM_ID_LENGTH = 64;
+
+function asJoin(payload: unknown): { roomId: string; name: string } | null {
+  if (!isRecord(payload)) return null;
+  const roomId = payload.roomId;
+  const name = payload.name;
+  if (typeof roomId !== "string" || typeof name !== "string") return null;
+  const trimmedName = name.trim();
+  if (!roomId || !trimmedName) return null;
+  if (roomId.length > MAX_ROOM_ID_LENGTH) return null;
+  return { roomId, name: trimmedName.slice(0, MAX_NAME_LENGTH) };
+}
+
+function asRelay(payload: unknown): { target: string; data: unknown } | null {
+  if (!isRecord(payload) || typeof payload.target !== "string") return null;
+  return { target: payload.target, data: payload.data };
+}
+
+function asChat(payload: unknown): { text: string } | null {
+  if (!isRecord(payload) || typeof payload.text !== "string") return null;
+  return { text: payload.text };
+}
+
+function asSharing(payload: unknown): { sharing: boolean } | null {
+  if (!isRecord(payload) || typeof payload.sharing !== "boolean") return null;
+  return { sharing: payload.sharing };
+}
+
+export function handleMessage(ws: ServerWebSocket<unknown>, raw: string | Buffer) {
+  const msg = parseWire(raw);
+  if (!msg) {
     ws.send(pack("error", { message: "bad json" }));
     return;
   }
   const { t, payload } = msg;
 
+  if (t === "ping") {
+    ws.send(pack("pong", {}));
+    return;
+  }
+
   if (t === "join") {
-    const { roomId, name } = payload as { roomId: string; name: string };
-    if (!roomId || !name) {
+    const join = asJoin(payload);
+    if (!join) {
       ws.send(pack("error", { message: "roomId and name required" }));
       return;
     }
-    (ws as any).peerId = crypto.randomUUID();
-    const id: PeerId = (ws as any).peerId;
+    const { roomId, name } = join;
+
+    const previousId = peerByWs.get(ws);
+    const previousRoom = previousId ? findRoomOfPeer(previousId) : undefined;
+    // A re-join that lands back in the same room replaces our own record, so it
+    // must not count against the cap.
+    const rejoiningSameRoom = previousRoom?.id === roomId;
+
+    // Capacity is checked BEFORE eviction: a join that the destination refuses
+    // must not strip the socket of the room it is already in, or the client
+    // believes it is still connected while the server has dropped it.
+    const destination = rooms.get(roomId);
+    if (!rejoiningSameRoom && destination && destination.peers.size >= 8) {
+      ws.send(pack("error", { message: "room full (max 8)" }));
+      return;
+    }
+
+    // A repeat join on the same socket must evict the previous membership,
+    // otherwise the old peer record is orphaned in its room forever.
+    if (previousId) {
+      if (previousRoom) {
+        const previousPeer = previousRoom.peers.get(previousId);
+        if (previousPeer) leaveRoom(previousRoom, previousPeer);
+      }
+      peerByWs.delete(ws);
+    }
 
     let room = rooms.get(roomId);
     if (!room) {
-      room = { id: roomId, peers: new Map(), hostId: null, chat: [], screenSharers: new Set() };
+      room = { id: roomId, peers: new Map(), hostId: null, chat: [] };
       rooms.set(roomId, room);
     }
     if (room.peers.size >= 8) {
       ws.send(pack("error", { message: "room full (max 8)" }));
       return;
     }
-    const peer: Peer = { id, name, isHost: false, ws, room: roomId };
+    const id: PeerId = crypto.randomUUID();
+    peerByWs.set(ws, id);
+    const peer: Peer = { id, name, isHost: false, sharing: false, micOn: true, ws, room: roomId };
     room.peers.set(id, peer);
     if (room.hostId === null) room.hostId = id;
 
     ws.send(pack("joined", { id, roomId, isHost: room.hostId === id }));
     for (const other of room.peers.values()) {
       if (other.id === id) continue;
-      other.ws.send(pack("peer_joined", { id, name, isHost: false }));
+      other.ws.send(pack("peer_joined", { id, name, isHost: false, sharing: false }));
     }
     broadcastRoomState(room);
     return;
   }
 
-  const peerId: PeerId | undefined = (ws as any).peerId;
+  const peerId = peerByWs.get(ws);
   if (!peerId) {
     ws.send(pack("error", { message: "not joined" }));
     return;
   }
-  const roomId: RoomId | undefined = rooms.size
-    ? [...rooms.values()].find((r) => r.peers.has(peerId))?.id
-    : undefined;
-  const room = roomId ? rooms.get(roomId) : undefined;
+  const room = findRoomOfPeer(peerId);
   if (!room) {
     ws.send(pack("error", { message: "room not found" }));
     return;
   }
 
-  if (t === "offer" || t === "answer" || t === "ice") {
-    const { target, data } = payload as { target: string; data: any };
-    const targetPeer = room.peers.get(target);
-    if (targetPeer) {
-      targetPeer.ws.send(pack(t, { from: peerId, data }));
-    }
+  if (t === "ice_restart") {
+    if (!isRecord(payload) || typeof payload.target !== "string") return;
+    room.peers.get(payload.target)?.ws.send(pack("ice_restart", { from: peerId }));
     return;
   }
 
-  if (t === "screen_state") {
-    const { sharing } = payload as { sharing: boolean };
-    if (sharing) {
-      room.screenSharers.add(peerId);
-    } else {
-      room.screenSharers.delete(peerId);
-    }
-    for (const p of room.peers.values()) {
-      p.ws.send(pack("screen_state", { id: peerId, sharing: !!sharing }));
+  if (t === "offer" || t === "answer" || t === "ice") {
+    const relay = asRelay(payload);
+    if (!relay) return;
+    const targetPeer = room.peers.get(relay.target);
+    if (targetPeer) {
+      targetPeer.ws.send(pack(t, { from: peerId, data: relay.data }));
     }
     return;
   }
 
   if (t === "chat") {
-    const { text } = payload as { text: string };
+    const chat = asChat(payload);
+    if (!chat) return;
     const entry = {
       id: crypto.randomUUID(),
       from: peerId,
       name: room.peers.get(peerId)?.name ?? "",
-      text: text.slice(0, 2000),
+      text: chat.text.slice(0, 2000),
       ts: Date.now(),
     };
     room.chat = [...room.chat.slice(-199), entry];
     for (const p of room.peers.values()) {
       p.ws.send(pack("chat", entry));
     }
+    return;
+  }
+
+  if (t === "media_state") {
+    if (!isRecord(payload) || typeof payload.micOn !== "boolean") return;
+    const peer = room.peers.get(peerId);
+    if (!peer || peer.micOn === payload.micOn) return;
+    peer.micOn = payload.micOn;
+    broadcastRoomState(room);
+    return;
+  }
+
+  if (t === "screen_share") {
+    const sharing = asSharing(payload);
+    if (!sharing) return;
+    const peer = room.peers.get(peerId);
+    if (!peer || peer.sharing === sharing.sharing) return;
+    peer.sharing = sharing.sharing;
+    broadcastRoomState(room);
     return;
   }
 
@@ -226,7 +319,7 @@ export function handleMessage(ws: ServerWebSocket<unknown>, raw: string | Buffer
 }
 
 export function handleClose(ws: ServerWebSocket<unknown>) {
-  const peerId: PeerId | undefined = (ws as any).peerId;
+  const peerId = peerByWs.get(ws);
   if (!peerId) return;
   for (const room of rooms.values()) {
     const peer = room.peers.get(peerId);

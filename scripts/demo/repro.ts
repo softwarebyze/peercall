@@ -54,14 +54,14 @@ async function newPeer(
   return { ctx, page }
 }
 
-// Invitees may see a name-confirmation gate before entering the room.
+// Everyone confirms devices in the lobby before the room goes live.
 async function passJoinGate(page: Page): Promise<void> {
-  const join = page.getByRole('button', { name: 'Join', exact: true })
+  const join = page.getByRole('button', { name: 'Join call' })
   try {
-    await join.waitFor({ state: 'visible', timeout: 5000 })
-    await join.click()
+    await join.waitFor({ state: 'visible', timeout: 8000 })
+    await join.click({ timeout: 20000 })
   } catch {
-    // No gate (e.g. host) — proceed.
+    // Already in the room.
   }
 }
 
@@ -95,7 +95,7 @@ function waitFor(fn: () => Promise<boolean>, timeoutMs: number, intervalMs = 200
 
 const overlayVisible = (page: Page) =>
   page
-    .getByText(/Connecting to signaling server|Waking up|Reconnecting to server/i)
+    .getByText(/Connecting to signaling|Waking the server|Signaling dropped|Waking up|Reconnecting/i)
     .first()
     .isVisible()
     .catch(() => false)
@@ -120,6 +120,7 @@ async function main() {
   const alice = await newPeer(browser, 'Alice')
   const t0 = Date.now()
   await alice.page.goto(`${BASE}/room/${room1}?host=1`)
+  await passJoinGate(alice.page)
   await waitFor(async () => !(await overlayVisible(alice.page)), 15000)
   const tSignal = Date.now() - t0
   await waitFor(async () => (await playingVideoCount(alice.page)) >= 1, 15000)
@@ -210,6 +211,7 @@ async function main() {
   const room2 = `demo5-${Date.now()}`
   const hostA = await newPeer(browser, 'HostA')
   await hostA.page.goto(`${BASE}/room/${room2}?host=1`)
+  await passJoinGate(hostA.page)
   await waitFor(async () => !(await overlayVisible(hostA.page)), 10000)
   const peerB = await newPeer(browser, 'PeerB')
   await peerB.page.goto(`${BASE}/room/${room2}`)
@@ -221,10 +223,14 @@ async function main() {
   // Original host leaves → server transfers host to B
   await hostA.ctx.close()
   await peerB.page.waitForTimeout(2000)
-  const bSeesEndCall = await peerB.page.getByTitle('End call for all').isVisible().catch(() => false)
+  const bSeesEndCall = await peerB.page.getByRole('button', { name: 'End for everyone' }).isVisible().catch(() => false)
   console.log(`PeerB now shows "End Call" button: ${bSeesEndCall}`)
   if (bSeesEndCall) {
-    await peerB.page.getByTitle('End call for all').click()
+    await peerB.page.getByRole('button', { name: 'End for everyone' }).click()
+    const confirm = peerB.page.getByTestId('end-confirm')
+    if (await confirm.isVisible().catch(() => false)) {
+      await confirm.getByRole('button', { name: 'End for everyone' }).click()
+    }
     await peerC.page.waitForTimeout(3000)
     const cUrl = peerC.page.url()
     const cSawEnd =
