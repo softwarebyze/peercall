@@ -11,6 +11,12 @@ interface VideoTileProps {
   videoOff?: boolean
   /** Local-only: we know our own mic state directly. */
   micOff?: boolean
+  /** Override the default name (used for screen-share tiles). */
+  label?: string
+  /** Screen shares use contain-fit so content isn’t cropped. */
+  variant?: 'camera' | 'screen'
+  /** Status shown when a tile has no video yet. */
+  emptyLabel?: string
 }
 
 const stateLabel: Partial<Record<RTCPeerConnectionState, string>> = {
@@ -48,9 +54,21 @@ function useTrackMuted(stream: MediaStream | null, kind: 'video' | 'audio'): boo
   return muted
 }
 
-export function VideoTile({ name, stream, isLocal, isHost, connectionState, videoOff, micOff }: VideoTileProps) {
+export function VideoTile({
+  name,
+  stream,
+  isLocal,
+  isHost,
+  connectionState,
+  videoOff,
+  micOff,
+  label,
+  variant = 'camera',
+  emptyLabel,
+}: VideoTileProps) {
   const videoRef = useRef<HTMLVideoElement>(null)
   const streamRef = useRef<MediaStream | null>(null)
+  const isScreen = variant === 'screen'
 
   // Force srcObject update when stream reference changes (covers mount + track swap)
   useEffect(() => {
@@ -61,35 +79,37 @@ export function VideoTile({ name, stream, isLocal, isHost, connectionState, vide
   }, [stream])
 
   const remoteVideoMuted = useTrackMuted(isLocal ? null : stream, 'video')
-  const remoteAudioMuted = useTrackMuted(isLocal ? null : stream, 'audio')
+  const remoteAudioMuted = useTrackMuted(isLocal || isScreen ? null : stream, 'audio')
 
   const noVideo = !stream || (isLocal ? !!videoOff : remoteVideoMuted)
   const micMuted = isLocal ? !!micOff : remoteAudioMuted
   const showConnectionIssue =
     !isLocal && connectionState && connectionState !== 'connected' && connectionState !== 'closed'
 
+  const waitingLabel = isScreen
+    ? (emptyLabel ?? 'Waiting for screen…')
+    : connectionState && showConnectionIssue
+      ? (stateLabel[connectionState] ?? connectionState)
+      : 'Waiting for camera…'
+
   return (
-    <div className={styles.tile}>
+    <div className={`${styles.tile} ${isScreen ? styles.tileScreen : ''}`}>
       <video
         ref={videoRef}
-        className={styles.video}
+        className={`${styles.video} ${isScreen ? styles.videoScreen : ''}`}
         style={noVideo ? { visibility: 'hidden' } : undefined}
         autoPlay
         playsInline
-        muted={isLocal}
+        muted={isLocal || isScreen}
       />
       {noVideo && (
         <div className={styles.noVideo}>
           <span className={styles.avatar}>{name.charAt(0).toUpperCase()}</span>
-          {!stream && (
-            <span className={styles.connectionBadge}>
-              {showConnectionIssue
-                ? (stateLabel[connectionState!] ?? connectionState)
-                : 'Waiting for camera…'}
-            </span>
-          )}
+          {!stream && <span className={styles.connectionBadge}>{waitingLabel}</span>}
           {stream && (isLocal ? videoOff : remoteVideoMuted) && (
-            <span className={styles.connectionBadge}>Camera off</span>
+            <span className={styles.connectionBadge}>
+              {isScreen ? (emptyLabel ?? 'Waiting for screen…') : 'Camera off'}
+            </span>
           )}
         </div>
       )}
@@ -99,8 +119,8 @@ export function VideoTile({ name, stream, isLocal, isHost, connectionState, vide
         </div>
       )}
       <div className={styles.tileLabel}>
-        <span>{isLocal ? `${name} (you)` : name}</span>
-        {micMuted && stream && (
+        <span>{label ?? (isLocal ? `${name} (you)` : name)}</span>
+        {micMuted && stream && !isScreen && (
           <span className={styles.mutedBadge} title="Microphone muted">
             🎙✕
           </span>

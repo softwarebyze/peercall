@@ -18,6 +18,9 @@ export interface Room {
   peers: Map<PeerId, Peer>;
   hostId: PeerId | null;
   chat: { id: string; from: PeerId; name: string; text: string; ts: number }[];
+  // Peers currently sharing a screen. Kept on the server so participants who
+  // join mid-share (or reconnect) immediately know to expect a screen track.
+  screenSharers: Set<PeerId>;
 }
 
 export const rooms = new Map<RoomId, Room>();
@@ -94,6 +97,7 @@ export function broadcastRoomState(room: Room) {
     id: p.id,
     name: p.name,
     isHost: p.id === room.hostId,
+    sharingScreen: room.screenSharers.has(p.id),
   }));
   for (const p of room.peers.values()) {
     p.ws.send(pack("room_state", { peers, chat: room.chat }));
@@ -102,6 +106,7 @@ export function broadcastRoomState(room: Room) {
 
 export function leaveRoom(room: Room, peer: Peer) {
   room.peers.delete(peer.id);
+  room.screenSharers.delete(peer.id);
   for (const other of room.peers.values()) {
     other.ws.send(pack("peer_left", { id: peer.id }));
   }
@@ -136,7 +141,7 @@ export function handleMessage(ws: ServerWebSocket<unknown>, raw: string | Buffer
 
     let room = rooms.get(roomId);
     if (!room) {
-      room = { id: roomId, peers: new Map(), hostId: null, chat: [] };
+      room = { id: roomId, peers: new Map(), hostId: null, chat: [], screenSharers: new Set() };
       rooms.set(roomId, room);
     }
     if (room.peers.size >= 8) {
@@ -175,6 +180,19 @@ export function handleMessage(ws: ServerWebSocket<unknown>, raw: string | Buffer
     const targetPeer = room.peers.get(target);
     if (targetPeer) {
       targetPeer.ws.send(pack(t, { from: peerId, data }));
+    }
+    return;
+  }
+
+  if (t === "screen_state") {
+    const { sharing } = payload as { sharing: boolean };
+    if (sharing) {
+      room.screenSharers.add(peerId);
+    } else {
+      room.screenSharers.delete(peerId);
+    }
+    for (const p of room.peers.values()) {
+      p.ws.send(pack("screen_state", { id: peerId, sharing: !!sharing }));
     }
     return;
   }

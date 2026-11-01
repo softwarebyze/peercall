@@ -6,7 +6,7 @@ function getSignalUrl(): string {
   return `${proto}//${window.location.host}/signal`
 }
 
-export type PeerInfo = { id: string; name: string; isHost: boolean }
+export type PeerInfo = { id: string; name: string; isHost: boolean; sharingScreen?: boolean }
 export type ChatEntry = { id: string; from: string; name: string; text: string; ts: number }
 
 export type SignalMsg =
@@ -14,6 +14,7 @@ export type SignalMsg =
   | { t: 'room_state'; payload: { peers: PeerInfo[]; chat: ChatEntry[] } }
   | { t: 'peer_joined'; payload: { id: string; name: string; isHost: boolean } }
   | { t: 'peer_left'; payload: { id: string } }
+  | { t: 'screen_state'; payload: { id: string; sharing: boolean } }
   | { t: 'offer'; payload: { from: string; data: RTCSessionDescriptionInit } }
   | { t: 'answer'; payload: { from: string; data: RTCSessionDescriptionInit } }
   | { t: 'ice'; payload: { from: string; data: RTCIceCandidateInit } }

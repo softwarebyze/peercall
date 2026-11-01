@@ -41,6 +41,13 @@ export function Room({ roomId, displayName, isHost }: RoomProps) {
       if (msg.t === 'chat') {
         setChat((prev) => [...prev, msg.payload])
       }
+      if (msg.t === 'screen_state') {
+        setPeers((prev) =>
+          prev.map((p) =>
+            p.id === msg.payload.id ? { ...p, sharingScreen: msg.payload.sharing } : p
+          )
+        )
+      }
       if (msg.t === 'call_ended') setCallEnded(true)
       if (msg.t === 'error') setSignalError(msg.payload.message)
       if (msg.t === 'joined') setSignalError(null)
@@ -63,7 +70,7 @@ export function Room({ roomId, displayName, isHost }: RoomProps) {
     localName: displayName,
   })
 
-  const recorder = useRecorder()
+  const recorder = useRecorder(rtc.localScreenStream)
 
   // List available devices
   useEffect(() => {
@@ -134,6 +141,57 @@ export function Room({ roomId, displayName, isHost }: RoomProps) {
       })
     return [me, ...remotes]
   }, [myId, displayName, isHostHere, peers, rtc.localStream, rtc.remoteStreams, rtc.connectionStates])
+
+  // Screen shares get their own tiles. The camera tile stays visible, so you
+  // can keep your face on screen while presenting.
+  const screenTiles = useMemo(() => {
+    const tiles: {
+      id: string
+      name: string
+      stream: MediaStream | null
+      isLocal: boolean
+      isHost: boolean
+      connectionState: RTCPeerConnectionState
+      label: string
+    }[] = []
+
+    if (rtc.screenSharing) {
+      tiles.push({
+        id: `${myId ?? 'me'}-screen`,
+        name: displayName,
+        stream: rtc.localScreenStream,
+        isLocal: true,
+        isHost: false,
+        connectionState: 'connected',
+        label: 'Your screen',
+      })
+    }
+
+    for (const p of peers) {
+      if (p.id === myId || !p.sharingScreen) continue
+      const media = rtc.remoteStreams.find((r) => r.id === p.id)
+      tiles.push({
+        id: `${p.id}-screen`,
+        name: p.name,
+        stream: media?.screenStream ?? null,
+        isLocal: false,
+        isHost: false,
+        connectionState:
+          media?.connectionState ?? rtc.connectionStates[p.id] ?? ('new' as RTCPeerConnectionState),
+        label: `${p.name}'s screen`,
+      })
+    }
+
+    return tiles
+  }, [
+    myId,
+    displayName,
+    peers,
+    rtc.screenSharing,
+    rtc.localScreenStream,
+    rtc.remoteStreams,
+    rtc.connectionStates,
+  ])
 
   const handleRecordToggle = () => {
     if (recorder.recording) {
@@ -235,6 +293,19 @@ export function Room({ roomId, displayName, isHost }: RoomProps) {
 
       <div className={styles.body}>
         <div className={`${styles.grid} ${participantsOpen ? styles.gridNarrow : ''}`}>
+          {screenTiles.map((t) => (
+            <VideoTile
+              key={t.id}
+              name={t.name}
+              stream={t.stream}
+              isLocal={t.isLocal}
+              isHost={t.isHost}
+              connectionState={t.connectionState}
+              label={t.label}
+              variant="screen"
+              emptyLabel={t.isLocal ? 'Starting your screen share…' : 'Connecting screen share…'}
+            />
+          ))}
           {allPeers.map((p) => (
             <VideoTile
               key={p.id}
@@ -268,6 +339,11 @@ export function Room({ roomId, displayName, isHost }: RoomProps) {
                     <span className={styles.participantName}>
                       {p.id === myId ? `${p.name} (you)` : p.name}
                     </span>
+                    {p.sharingScreen && (
+                      <span className={styles.shareBadge} title="Sharing screen">
+                        🖥
+                      </span>
+                    )}
                     {p.isHost && <span className={styles.hostBadge}>HOST</span>}
                   </div>
                 )

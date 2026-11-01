@@ -45,17 +45,17 @@ export function ControlsBar(props: ControlsBarProps) {
         <button
           className={props.screenSharing ? 'btn-primary' : 'btn-ghost'}
           onClick={props.screenSharing ? props.onStopScreen : props.onShareScreen}
-          title={props.screenSharing ? 'Stop sharing' : 'Share screen'}
+          title={props.screenSharing ? 'Stop sharing your screen' : 'Share your screen'}
         >
-          {props.screenSharing ? '⬛ Stop Share' : '🖥 Share'}
+          {props.screenSharing ? '🖥 Stop sharing' : '🖥 Share screen'}
         </button>
 
         <button
           className={props.recording ? styles.btnRecording : 'btn-ghost'}
           onClick={props.onRecordToggle}
-          title={props.recording ? 'Stop recording' : 'Start recording'}
+          title={props.recording ? 'Stop recording this call' : 'Start recording'}
         >
-          {props.recording ? '⏹ Stop' : '⏺ Record'}
+          {props.recording ? '⏹ Stop recording' : '⏺ Record'}
         </button>
 
         <button

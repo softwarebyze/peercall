@@ -5,10 +5,10 @@ Privacy-first peer-to-peer video calling. WebRTC mesh, local recording via Media
 ## Features
 
 - **P2P Mesh** — Up to 8 participants connected directly via WebRTC. No SFU, no relay server.
-- **Local Recording** — Record calls as MP4 directly to your device with MediaBunny.
+- **Local Recording** — Record MP4 directly to your device with MediaBunny, including your shared screen with your camera in the corner.
 - **Zero Data Collection** — No accounts, no analytics, no tracking. Media never leaves your browser.
 - **In-Call Chat** — Ephemeral text messages via signaling server.
-- **Screen Sharing** — Share your screen with other participants.
+- **Screen Sharing** — Share your screen while your camera stays on, so people still see you while you present.
 - **Host Controls** — First participant becomes host. Host can end call for all.
 
 ## Quick Start
