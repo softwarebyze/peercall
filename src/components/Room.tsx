@@ -210,7 +210,7 @@ function RoomSession(props: {
     if (connected) send('media_state', { micOn: !micOff })
   }, [connected, send, micOff])
 
-  const recorder = useRecorder()
+  const recorder = useRecorder(rtc.localScreenStream)
   const devices = useMediaDevices({ stream: rtc.localStream })
   const micLevel = useMicLevel({ stream: rtc.localStream, active: rtc.micOn })
   const isHostHere = peers.find((p) => p.id === myId)?.isHost ?? false
@@ -257,7 +257,7 @@ function RoomSession(props: {
       id: myId ?? 'me',
       name: displayName,
       isHost: isHostHere,
-      sharing: rtc.screenSharing,
+      sharing: false,
       micOff,
       stream: rtc.localStream,
       isLocal: true,
@@ -271,7 +271,7 @@ function RoomSession(props: {
           id: p.id,
           name: p.name,
           isHost: p.isHost,
-          sharing: p.sharing,
+          sharing: false,
           micOff: !p.micOn,
           stream: media?.stream ?? null,
           isLocal: false,
@@ -279,7 +279,19 @@ function RoomSession(props: {
             media?.connectionState ?? rtc.connectionStates[p.id] ?? ('new' as RTCPeerConnectionState),
         }
       })
-    return [me, ...remotes]
+    const screens: CallPeer[] = []
+    if (rtc.screenSharing) screens.push({
+      ...me, id: `${me.id}-screen`, sharing: true, isHost: false,
+      stream: rtc.localScreenStream,
+    })
+    for (const peer of remotes) {
+      if (!peers.find(p => p.id === peer.id)?.sharing) continue
+      screens.push({
+        ...peer, id: `${peer.id}-screen`, sharing: true, isHost: false,
+        stream: rtc.remoteStreams.find(p => p.id === peer.id)?.screenStream ?? null,
+      })
+    }
+    return [me, ...remotes, ...screens]
   }, [
     myId,
     displayName,
@@ -288,6 +300,7 @@ function RoomSession(props: {
     rtc.screenSharing,
     micOff,
     rtc.localStream,
+    rtc.localScreenStream,
     rtc.remoteStreams,
     rtc.connectionStates,
   ])
@@ -313,13 +326,14 @@ function RoomSession(props: {
     const slot = placement.slots[p.id]
     return (
       <VideoTile
-        key={p.isLocal ? 'local' : p.id}
+        key={p.id}
         name={p.name}
+        label={p.sharing ? (p.isLocal ? "Your screen" : `${p.name}’s screen`) : undefined}
         stream={p.stream}
         isLocal={p.isLocal}
         isHost={p.isHost}
         connectionState={p.connectionState}
-        videoOff={p.isLocal ? !rtc.screenSharing && (rtc.listenOnly || !rtc.cameraOn || !rtc.hasVideo) : undefined}
+        videoOff={p.isLocal && !p.sharing ? (rtc.listenOnly || !rtc.cameraOn || !rtc.hasVideo) : undefined}
         micOff={p.micOff}
         sinkId={speakerDeviceId}
         variant={slot.variant}
@@ -352,8 +366,12 @@ function RoomSession(props: {
           }
         }
       })
-    } else if (rtc.localStream) {
-      void recorder.start(rtc.localStream).then((result) => {
+    } else if (rtc.localStream || rtc.localScreenStream) {
+      const recordingStream = new MediaStream([
+        ...(rtc.localStream?.getVideoTracks().length ? rtc.localStream.getVideoTracks() : rtc.localScreenStream?.getVideoTracks() ?? []),
+        ...(rtc.localStream?.getAudioTracks() ?? []),
+      ])
+      void recorder.start(recordingStream).then((result) => {
         switch (result.kind) {
           case 'ok':
             return

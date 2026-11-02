@@ -39,16 +39,44 @@ function senderFor(pc: RTCPeerConnection, kind: 'video' | 'audio') {
   return (matching.find(t => t.mid !== null) ?? matching[0])?.sender
 }
 
+/** Cap a sender's bitrate (and pick a quality trade-off) without renegotiating. */
+async function tuneSender(
+  sender: RTCRtpSender,
+  maxBitrate: number,
+  degradationPreference: RTCDegradationPreference
+) {
+  try {
+    const params = sender.getParameters()
+    if (!params.encodings || params.encodings.length === 0) {
+      params.encodings = [{}]
+    }
+    params.encodings[0].maxBitrate = maxBitrate
+    params.degradationPreference = degradationPreference
+    await sender.setParameters(params)
+  } catch {}
+}
+
+const CAMERA_MAX_BITRATE = 1_500_000
+const SCREEN_MAX_BITRATE = 2_500_000
+
+function screenSenderFor(pc: RTCPeerConnection) {
+  const videos = pc.getTransceivers().filter(t => t.receiver.track.kind === 'video')
+  const negotiated = videos.filter(t => t.mid !== null)
+  return (negotiated.length > 1 ? negotiated[1] : videos[1])?.sender
+}
+
 export interface PeerStream {
   id: string
   name: string
-  stream: MediaStream
+  stream: MediaStream | null
+  screenStream: MediaStream | null
   isHost: boolean
   connectionState: RTCPeerConnectionState
 }
 
 export interface WebRTCState {
   localStream: MediaStream | null
+  localScreenStream: MediaStream | null
   remoteStreams: PeerStream[]
   connectionStates: Record<string, RTCPeerConnectionState>
   send: (t: string, p: unknown) => void
@@ -95,7 +123,10 @@ export function useWebRTC(opts: {
   const localStreamRef = useRef<MediaStream | null>(null)
   const preferredCameraRef = useRef<string | null>(null)
   const [cameraFallbackAvailable, setCameraFallbackAvailable] = useState(false)
-  const cameraBeforeShareRef = useRef<MediaStreamTrack | null>(null)
+  const screenTrackRef = useRef<MediaStreamTrack | null>(null)
+  const screenRequestRef = useRef(false)
+  const remoteScreenStreamsRef = useRef<Map<string, MediaStream>>(new Map())
+  const [localScreenStream, setLocalScreenStream] = useState<MediaStream | null>(null)
   const sharingRef = useRef(false)
   const aliveRef = useRef(true)
   const acquisitionRef = useRef(0)
@@ -141,12 +172,13 @@ export function useWebRTC(opts: {
 
   const refreshRemote = useCallback(() => {
     const arr: PeerStream[] = []
-    for (const [id, stream] of streamsRef.current) {
+    for (const id of new Set([...streamsRef.current.keys(), ...remoteScreenStreamsRef.current.keys()])) {
       const peer = peersRef.current.find((p) => p.id === id)
       arr.push({
         id,
         name: peer?.name ?? 'Peer',
-        stream,
+        stream: streamsRef.current.get(id) ?? null,
+        screenStream: remoteScreenStreamsRef.current.get(id) ?? null,
         isHost: peer?.isHost ?? false,
         connectionState: connectionStatesRef.current.get(id) ?? 'new',
       })
@@ -181,6 +213,7 @@ export function useWebRTC(opts: {
       pcsRef.current.delete(peerId)
     }
     streamsRef.current.delete(peerId)
+    remoteScreenStreamsRef.current.delete(peerId)
     connectionStatesRef.current.delete(peerId)
     pendingCandidatesRef.current.delete(peerId)
     pendingOffersRef.current.delete(peerId)
@@ -211,7 +244,8 @@ export function useWebRTC(opts: {
       let hasAudio = false
       if (stream) {
         for (const track of stream.getTracks()) {
-          pc.addTrack(track, stream)
+          const sender = pc.addTrack(track, stream)
+          if (track.kind === 'video') void tuneSender(sender, CAMERA_MAX_BITRATE, 'balanced')
           if (track.kind === 'video') hasVideo = true
           if (track.kind === 'audio') hasAudio = true
         }
@@ -220,11 +254,19 @@ export function useWebRTC(opts: {
       // replaceTrack, without a new offer or leaving the call.
       if (!hasVideo) pc.addTransceiver('video', { direction: 'sendrecv' })
       if (!hasAudio) pc.addTransceiver('audio', { direction: 'sendrecv' })
+      // Reserve a separate screen slot even for audio-only/listen-only peers.
+      // Starting/stopping a share only swaps this track, without renegotiation.
+      const screen = pc.addTransceiver('video', { direction: 'sendrecv' })
+      void screen.sender.replaceTrack(screenTrackRef.current).catch(() => {})
+      void tuneSender(screen.sender, SCREEN_MAX_BITRATE, 'maintain-resolution')
 
       pc.ontrack = (ev) => {
         // Streamless reserved transceivers and camera/audio can arrive in
         // separate events. Aggregate by peer rather than overwriting audio.
-        const previous = streamsRef.current.get(peerId)
+        const videos = pc.getTransceivers().filter(t => t.receiver.track.kind === 'video' && t.mid !== null)
+        const isScreen = ev.track.kind === 'video' && videos.indexOf(ev.transceiver) > 0
+        const streams = isScreen ? remoteScreenStreamsRef.current : streamsRef.current
+        const previous = streams.get(peerId)
         if (previous?.getTracks().includes(ev.track)) return
         // A new stream identity makes playback and mute listeners notice a
         // newly received kind, even if audio arrived before the video event.
@@ -232,7 +274,7 @@ export function useWebRTC(opts: {
           ...(previous?.getTracks().filter(t => t.kind !== ev.track.kind) ?? []),
           ev.track,
         ])
-        streamsRef.current.set(peerId, remote)
+        streams.set(peerId, remote)
         refreshRemote()
       }
 
@@ -359,9 +401,11 @@ export function useWebRTC(opts: {
               const kind = transceiver.receiver.track.kind as 'audio' | 'video'
               transceiver.direction = 'sendrecv'
               const local = localStreamRef.current
-              const track = local?.getTracks().find(t => t.kind === kind) ?? null
+              const isScreen = transceiver.sender === screenSenderFor(pc)
+              const track = isScreen ? screenTrackRef.current : local?.getTracks().find(t => t.kind === kind) ?? null
               await transceiver.sender.replaceTrack(track)
-              if (local) transceiver.sender.setStreams(local)
+              if (local && !isScreen) transceiver.sender.setStreams(local)
+              if (kind === 'video') void tuneSender(transceiver.sender, isScreen ? SCREEN_MAX_BITRATE : CAMERA_MAX_BITRATE, isScreen ? 'maintain-resolution' : 'balanced')
             }
           })
           .then(() => pc.createAnswer())
@@ -400,6 +444,10 @@ export function useWebRTC(opts: {
     const previous = localStreamRef.current
     if (previous && previous !== stream) {
       previous.getTracks().filter((track) => !stream.getTracks().includes(track)).forEach((track) => track.stop())
+    }
+    for (const track of stream.getVideoTracks()) {
+      track.contentHint = 'motion'
+      void track.applyConstraints({ width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30, max: 30 } }).catch(() => {})
     }
     const cameraId = stream.getVideoTracks()[0]?.getSettings().deviceId
     if (cameraId) preferredCameraRef.current = cameraId
@@ -501,8 +549,8 @@ export function useWebRTC(opts: {
         for (const [id] of pcsRef.current) cleanupPC(id)
         localStreamRef.current?.getTracks().forEach((t) => t.stop())
         localStreamRef.current = null
-        cameraBeforeShareRef.current?.stop()
-        cameraBeforeShareRef.current = null
+        screenTrackRef.current?.stop()
+        screenTrackRef.current = null
         sharingRef.current = false
       }
     },
@@ -526,7 +574,7 @@ export function useWebRTC(opts: {
 
   useEffect(() => {
     const camera = localStream?.getVideoTracks()[0]
-    if (!camera || sharingRef.current) return
+    if (!camera) return
     const ended = () => setMediaError('Camera disconnected. Reconnect it, then choose Retry camera.')
     camera.addEventListener('ended', ended)
     return () => camera.removeEventListener('ended', ended)
@@ -578,11 +626,7 @@ export function useWebRTC(opts: {
     (on: boolean) => {
       cameraOnRef.current = on
       setCameraOn(on)
-      if (sharingRef.current) {
-        if (cameraBeforeShareRef.current) cameraBeforeShareRef.current.enabled = on
-      } else {
-        localStreamRef.current?.getVideoTracks().forEach((t) => (t.enabled = on))
-      }
+      localStreamRef.current?.getVideoTracks().forEach((t) => (t.enabled = on))
     },
     []
   )
@@ -596,80 +640,91 @@ export function useWebRTC(opts: {
     []
   )
 
-  const shareScreen = useCallback(async () => {
-    if (sharingRef.current) return
-    const localAtStart = localStreamRef.current
-    try {
-      const screen = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false })
-      const screenTrack = screen.getVideoTracks()[0]
-      if (!screenTrack || !aliveRef.current || sharingRef.current || localAtStart !== localStreamRef.current) {
-        screen.getTracks().forEach((t) => t.stop())
-        return
-      }
-      if ('contentHint' in screenTrack) screenTrack.contentHint = 'detail'
-      // This version presents by replacing the camera sender. Separate
-      // camera and screen publication will be added as a follow-up.
-      if (!localStreamRef.current?.getVideoTracks()[0]) {
-        screen.getTracks().forEach((t) => t.stop())
-        return
-      }
-      sharingRef.current = true
-      setScreenSharing(true)
-      // Tell peers we are presenting so they can spotlight the shared screen
-      // instead of leaving it in a one-third grid cell.
-      sendSignal('screen_share', { sharing: true })
+  const stopScreen = useCallback(() => {
+    const track = screenTrackRef.current
+    if (!track) return
+    screenTrackRef.current = null
+    track.onended = null
+    track.stop()
 
-      screenTrack.onended = () => {
-        void stopScreen()
-      }
-
-      for (const [, pc] of pcsRef.current) {
-        const sender = senderFor(pc, 'video')
-        if (sender) void sender.replaceTrack(screenTrack).catch(() => {})
-      }
-
-      const oldVideo = localStreamRef.current?.getVideoTracks()[0]
-      if (localStreamRef.current && oldVideo) {
-        cameraBeforeShareRef.current = oldVideo
-        localStreamRef.current.removeTrack(oldVideo)
-        localStreamRef.current.addTrack(screenTrack)
-        setLocalStream(new MediaStream(localStreamRef.current.getTracks()))
-      }
-    } catch {
-      // user cancelled the picker
+    // Drop the screen track from every sender but keep the transceiver around,
+    // so the next share is instant and needs no renegotiation.
+    for (const pc of pcsRef.current.values()) {
+      void screenSenderFor(pc)?.replaceTrack(null).catch(() => {})
     }
-  }, [sendSignal])
 
-  const stopScreen = useCallback(async () => {
-    if (!sharingRef.current) return
+    setLocalScreenStream(null)
     sharingRef.current = false
     setScreenSharing(false)
     sendSignal('screen_share', { sharing: false })
-    const local = localStreamRef.current
-    const screenTrack = local?.getVideoTracks()[0]
-    if (screenTrack) {
-      screenTrack.onended = null
-      screenTrack.stop()
-      local?.removeTrack(screenTrack)
-    }
-    const camera = cameraBeforeShareRef.current
-    cameraBeforeShareRef.current = null
-    if (local && camera?.readyState === 'live') {
-      camera.enabled = cameraOnRef.current
-      local.addTrack(camera)
-      for (const pc of pcsRef.current.values()) {
-        const sender = senderFor(pc, 'video')
-        if (sender) void sender.replaceTrack(camera).catch(() => {})
-      }
-      setLocalStream(new MediaStream(local.getTracks()))
-    } else {
-      camera?.stop()
-      // Do not reopen the camera just because sharing ended. An explicit
-      // retry keeps permission requests predictable and leaves audio working.
-      if (local) setLocalStream(new MediaStream(local.getTracks()))
-      if (aliveRef.current) setMediaError('Camera disconnected. Reconnect it, then choose Retry camera.')
-    }
   }, [sendSignal])
+
+  const shareScreen = useCallback(async () => {
+    if (screenTrackRef.current || screenRequestRef.current || !aliveRef.current) return
+    screenRequestRef.current = true
+    try {
+      const screen = await navigator.mediaDevices.getDisplayMedia({
+        // 1080p/15fps keeps screen encoding cheap while staying readable.
+        video: {
+          frameRate: { ideal: 15 },
+          width: { ideal: 1920 },
+          height: { ideal: 1080 },
+        },
+        audio: false,
+      })
+      const screenTrack = screen.getVideoTracks()[0]
+      if (!screenTrack || !aliveRef.current) {
+        screen.getTracks().forEach((track) => track.stop())
+        return
+      }
+
+      // Display capture forbids max constraints in the picker request. Apply
+      // the encoding-friendly bounds to the selected track instead.
+      await screenTrack.applyConstraints({
+        frameRate: { ideal: 15, max: 20 },
+        width: { max: 1920 },
+        height: { max: 1080 },
+      }).catch(() => {})
+      if (!aliveRef.current || screenTrack.readyState === 'ended') {
+        screen.getTracks().forEach((track) => track.stop())
+        return
+      }
+
+      screenTrack.contentHint = 'detail'
+      screenTrack.onended = () => stopScreen()
+      screenTrackRef.current = screenTrack
+      const screenStream = new MediaStream([screenTrack])
+
+      for (const pc of pcsRef.current.values()) {
+        const sender = screenSenderFor(pc)
+        if (sender) {
+          await sender.replaceTrack(screenTrack).catch(() => {})
+          void tuneSender(sender, SCREEN_MAX_BITRATE, 'maintain-resolution')
+        }
+      }
+
+      if (!aliveRef.current || screenTrackRef.current !== screenTrack) return
+      setLocalScreenStream(screenStream)
+      sharingRef.current = true
+      setScreenSharing(true)
+      setMediaError(null)
+      sendSignal('screen_share', { sharing: true })
+    } catch (err) {
+      // Cancelling the browser picker is not an error.
+      if ((err instanceof Error ? err.name : '') !== 'NotAllowedError') {
+        setMediaError('Could not start screen sharing. Please try again.')
+      }
+    } finally {
+      screenRequestRef.current = false
+    }
+  }, [sendSignal, stopScreen])
+
+  // Re-announce an in-progress share after a signaling reconnect (new peer id).
+  useEffect(() => {
+    if (myId && screenTrackRef.current) {
+      sendSignal('screen_share', { sharing: true })
+    }
+  }, [myId, sendSignal])
 
   const switchDevice = useCallback(
     async (args: { kind: 'videoinput' | 'audioinput'; deviceId: string }) => {
@@ -683,23 +738,18 @@ export function useWebRTC(opts: {
         })
         const newTrack = stream.getTracks()[0]
         const local = localStreamRef.current ?? new MediaStream()
-        const oldTrack = trackKind === 'video' && sharingRef.current
-          ? cameraBeforeShareRef.current
-          : findLocalTrack(local, trackKind)
+        const oldTrack = findLocalTrack(local, trackKind)
         if (!newTrack || !aliveRef.current || localStreamRef.current !== ownedLocal) {
           stream.getTracks().forEach((t) => t.stop())
           return
         }
-        if (trackKind === 'video') preferredCameraRef.current = newTrack.getSettings().deviceId ?? args.deviceId ?? null
+        if (trackKind === 'video') {
+          preferredCameraRef.current = newTrack.getSettings().deviceId ?? args.deviceId ?? null
+          newTrack.contentHint = 'motion'
+          void newTrack.applyConstraints({ width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30, max: 30 } }).catch(() => {})
+        }
         newTrack.enabled = trackKind === 'video' ? cameraOnRef.current : micOnRef.current
 
-        if (trackKind === 'video' && sharingRef.current) {
-          oldTrack?.stop()
-          cameraBeforeShareRef.current = newTrack
-          setMediaError(null)
-          setLocalStream(new MediaStream(local.getTracks()))
-          return
-        }
         for (const [, pc] of pcsRef.current) {
           const sender = senderFor(pc, trackKind)
           if (sender) void sender.replaceTrack(newTrack).catch(() => {})
@@ -736,17 +786,19 @@ export function useWebRTC(opts: {
     for (const [id] of pcsRef.current) cleanupPC(id)
     localStreamRef.current?.getTracks().forEach((t) => t.stop())
     localStreamRef.current = null
-    cameraBeforeShareRef.current?.stop()
-    cameraBeforeShareRef.current = null
+    screenTrackRef.current?.stop()
+    screenTrackRef.current = null
     sharingRef.current = false
     acquisitionRef.current++
     setScreenSharing(false)
+    setLocalScreenStream(null)
     setLocalStream(null)
     refreshRemote()
   }, [cleanupPC, refreshRemote])
 
   return {
     localStream,
+    localScreenStream,
     remoteStreams,
     connectionStates,
     send: sendSignal,
@@ -761,7 +813,7 @@ export function useWebRTC(opts: {
     switchDevice,
     endCall,
     mediaError,
-    cameraDeviceId: (cameraBeforeShareRef.current ?? localStream?.getVideoTracks()[0])?.getSettings().deviceId ?? null,
+    cameraDeviceId: localStream?.getVideoTracks()[0]?.getSettings().deviceId ?? null,
     micDeviceId: localStream?.getAudioTracks()[0]?.getSettings().deviceId ?? null,
     cameraFallbackAvailable,
     useDefaultCamera: () => { void switchDevice({ kind: 'videoinput', deviceId: '' }) },
@@ -780,12 +832,12 @@ export function useWebRTC(opts: {
     },
     joinListenOnly: () => {
       acquisitionRef.current++
-      if (sharingRef.current) sendSignal('screen_share', { sharing: false })
+      stopScreen()
       sharingRef.current = false
       setScreenSharing(false)
       localStreamRef.current?.getTracks().forEach(t => t.stop())
-      cameraBeforeShareRef.current?.stop()
-      cameraBeforeShareRef.current = null
+      screenTrackRef.current?.stop()
+      screenTrackRef.current = null
       localStreamRef.current = null
       for (const pc of pcsRef.current.values()) {
         for (const sender of pc.getSenders()) void sender.replaceTrack(null).catch(() => {})

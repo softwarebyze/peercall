@@ -35,7 +35,7 @@ test.describe('screen share layout', () => {
       await expect(page.locator('[data-variant="stage"]')).toHaveCount(1)
       await expect(page.locator('[data-sharing="true"]')).toHaveCount(1)
       await expect(page.getByText('Presenting')).toBeVisible()
-      await expect(page.locator('[data-variant="strip"]')).toHaveCount(2)
+      await expect(page.locator('[data-variant="strip"]')).toHaveCount(3)
     }
 
     await alice.page.getByTitle('Stop sharing').click()
@@ -79,8 +79,8 @@ test.describe('screen share layout', () => {
       await expect(shareTiles).toHaveCount(2)
       await expect(page.locator('[data-layout="shares"]').locator('[data-sharing="true"]')).toHaveCount(2)
       await expect(page.getByText('Presenting')).toHaveCount(2)
-      // Carol is not sharing, so she is the only one left in the filmstrip.
-      await expect(page.locator('[data-variant="strip"]')).toHaveCount(1)
+      // All three cameras remain visible in the filmstrip.
+      await expect(page.locator('[data-variant="strip"]')).toHaveCount(3)
 
       // Side by side on a landscape window, not stacked or cropped to a sliver.
       const boxes = await shareTiles.evaluateAll((els) =>

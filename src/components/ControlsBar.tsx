@@ -128,8 +128,8 @@ export function ControlsBar(props: ControlsBarProps) {
           title={props.screenSharing ? 'Stop sharing' : 'Share screen'}
           aria-pressed={props.screenSharing}
         >
-          {props.screenSharing ? <IconStop /> : <IconScreen />}
-          <span className={styles.ctrlText}>{props.screenSharing ? 'Stop' : 'Share'}</span>
+          <IconScreen />
+          <span className={styles.ctrlText}>{props.screenSharing ? 'Stop sharing' : 'Share screen'}</span>
         </button>
 
         <button
@@ -147,7 +147,7 @@ export function ControlsBar(props: ControlsBarProps) {
           aria-pressed={props.recording}
         >
           {props.recording ? <IconStop /> : <IconRecord />}
-          <span className={styles.ctrlText}>{props.recording ? 'Stop' : 'Record'}</span>
+          <span className={styles.ctrlText}>{props.recording ? 'Stop recording' : 'Record'}</span>
         </button>
 
         <button
